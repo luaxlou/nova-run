@@ -61,6 +61,9 @@ nova-run/
 - 目标机器运行 `scripts/install-agent.sh`
 - 确认 `NOVA_AGENT_TOKEN` 与 `/etc/nova-agent/token` 保持一致
 - 准备 artifact（包含 `run`）并执行 `nova deploy <app> <artifact_dir>`
+- Linux 服务器发布时需先交付 Linux amd64 二进制：
+  - `GOOS=linux GOARCH=amd64 go build -o dist/nova-agent ./cmd/nova-agent`
+  - 将该产物上传至服务端，再用 `install-agent.sh` 安装。
 - 快速验收命令：
   - `nova list`
   - `nova status <app>`

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Glow will be documented in this file.
+All notable changes to Nova Run will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -8,23 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 一键安装脚本支持（Linux/macOS）
-- 自我更新功能（`glow-server update` 和 `glow update`）
-- 版本管理命令（`glow-server version` 和 `glow version`）
-- 日志自动清理功能（按年龄 + 总量）
-- 服务环境文件支持
-- 固定目录约定（`/var/lib/glow-server`, `/etc/glow-server`）
-- 一键卸载脚本（保留配置与数据库）
-- 本地开发安装脚本（不常驻服务）
+- 修复 `nova-agent` API 路由层编译错误，补齐 `RenderJSON`/`RenderJSONError` 使用方式。
+- 修正 `api.go` 中应用列表目录读取逻辑，避免 `[]DirEntry` 与 `[]string` 类型冲突。
+- 规范 `internal/deploy/replace.go` 中 `EnsureRunBinary` 的导入与调用。
+- 增加 `nova-agent` Linux 交付流程（可直接由本机交付至服务端）与本次上线执行记录。
 
 ### Changed
-- 移除 `glow-server install` 命令（统一使用安装脚本）
-- 更新 `serve` 命令支持 `--data-dir` 参数
-- 更新服务模板（systemd/launchd）支持环境文件
+- `nova` 安装建议增加无 sudo 场景下的本地用户目录安装方案（用于开发机快速验证）。
 
 ### Fixed
-- 修复日志目录管理
-- 修复服务注册的幂等性
+- 修复 `nova-agent` 在服务器 `<your-domain>` 首次启动报 `status=203/EXEC` 的架构不匹配问题：补充 Linux 目标编译产物。
+- 修复并完成远端 `systemd` 服务上线（`nova-agent.service`）后 healthcheck 可用。
 
 ---
 

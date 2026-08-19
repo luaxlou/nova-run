@@ -30,7 +30,7 @@ func RequireToken(expected string) func(http.HandlerFunc) http.HandlerFunc {
 			got := ParseBearerToken(r)
 			if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(expected)) != 1 {
 				w.WriteHeader(http.StatusUnauthorized)
-				_ = api.RenderJSON(w, api.Response{
+				api.RenderJSON(w, api.Response{
 					Success: false,
 					Message: "invalid token",
 				})

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/luaxlou/glow-ops/internal/artifact"
 )
 
 func ReplaceArtifact(dst, src string) error {
@@ -36,7 +38,7 @@ func ReplaceArtifact(dst, src string) error {
 	if err := extractArchive(artifactPath, tmpDir); err != nil {
 		return err
 	}
-	if err := EnsureRunBinary(tmpDir); err != nil {
+	if err := artifact.EnsureRunBinary(tmpDir); err != nil {
 		return fmt.Errorf("invalid artifact: %w", err)
 	}
 

@@ -39,7 +39,7 @@
 请按下面顺序协助我：
 1) 安装 CLI 到本机（curl）：
    curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
-2) 在项目目录执行 `nova`：
+2) 初始化（在项目目录执行 `nova`）：
    - 若未检测到配置，将自动进入交互式初始化，要求输入 Endpoint/Token 等
 3) 服务端安装：Linux 端执行 `scripts/install-agent.sh`（会启动 `nova agent`）。
 4) 发布上线：准备 artifact（含 `run`），执行 `nova deploy <app> <artifact_dir>`。
@@ -47,10 +47,13 @@
 6) 发布产物历史位于 GitHub Releases，供本地/服务器通过 curl 拉取二进制。
 ```
 
-## 本地初始化（交互式）
+## 安装与初始化（分离）
 
 ```bash
+# 安装 CLI（仅安装）
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
+
+# 初始化（在目标项目目录执行）
 cd /path/to/项目目录
 nova
 ```

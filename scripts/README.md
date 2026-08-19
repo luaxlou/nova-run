@@ -10,9 +10,9 @@
 
 ## 发布时流程（推荐）
 
-1. 本地安装（curl）：
+1. 安装 CLI（curl，仅做安装）：
    - `curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash`
-2. 在项目目录执行 `nova`：
+2. 在项目目录执行 `nova`（初始化）：
    - 首次运行会检测是否缺少本地连接配置，若缺失会进入交互式初始化
 3. 本地构建并上传 `nova` Linux amd64 二进制：
    - `GOOS=linux GOARCH=amd64 go build -o dist/nova ./cmd/nova`

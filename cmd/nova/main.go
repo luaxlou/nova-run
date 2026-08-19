@@ -27,7 +27,7 @@ func usage() {
 
 Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
-  nova install        # 安装 CLI（可选）并进入交互式配置
+  nova install        # 安装/更新本地 Nova CLI 二进制
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova deploy <app> <artifact_dir>
   nova start <app>
@@ -225,7 +225,7 @@ func autoBootstrapRuntimeConfig(cmd string) error {
 	}
 
 	if !hasTTY() {
-		return fmt.Errorf("未检测到 Nova 运行时配置。请先执行 `NOVA_GITHUB_REPO=<owner>/<repo> nova install` 或设置环境变量 NOVA_ENDPOINT/NOVA_TOKEN")
+		return fmt.Errorf("未检测到 Nova 运行时配置。请先配置 NOVA_ENDPOINT 和 NOVA_TOKEN 环境变量")
 	}
 
 	info("未检测到 Nova 运行时配置，进入交互式初始化")
@@ -394,52 +394,21 @@ type githubRelease struct {
 func runInstall(_ []string) error {
 	repo := strings.TrimSpace(os.Getenv("NOVA_GITHUB_REPO"))
 	if repo == "" {
-		return fmt.Errorf("未设置 NOVA_GITHUB_REPO（例如 your-org/nova-run）")
+		repo = "luaxlou/nova-run"
 	}
 
-	info("Nova 安装向导（单二进制模式）")
-	info("执行此命令会进行安装 + 服务器连接初始化（交互式）")
+	info("Nova CLI 安装向导（单二进制模式）")
+	info("执行此命令只负责安装/更新本地 CLI，不做服务器初始化")
 
 	platformOS, platformArch, err := detectPlatform()
 	if err != nil {
 		return err
 	}
 
-	endpoint := strings.TrimSpace(firstEnv("NOVA_ENDPOINT", "NOVA_AGENT_ENDPOINT"))
-	if endpoint == "" {
-		value, err := promptInput("Nova 地址 [http://127.0.0.1:32102]: ", "http://127.0.0.1:32102")
-		if err != nil {
-			return err
-		}
-		endpoint = value
-	}
-
-	token := strings.TrimSpace(firstEnv("NOVA_TOKEN", "NOVA_AGENT_TOKEN"))
-	if token == "" {
-		value, err := promptInput("Nova Token: ", "")
-		if err != nil {
-			return err
-		}
-		token = value
-	}
-	if token == "" {
-		return fmt.Errorf("Token 不能为空")
-	}
-
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("读取用户目录失败: %w", err)
 	}
-	configPath := firstEnvOrDefault("NOVA_CLIENT_ENV", filepath.Join(home, ".nova", "client.env"))
-	if value, isSet := firstEnvWithSource("NOVA_CLIENT_ENV"); !isSet {
-		configPath, err = promptInput(fmt.Sprintf("配置文件路径 [%s]: ", configPath), configPath)
-		if err != nil {
-			return err
-		}
-	} else {
-		configPath = value
-	}
-
 	installDir := strings.TrimSpace(os.Getenv("NOVA_INSTALL_DIR"))
 	clientBinaryName := firstEnvOrDefault("NOVA_BINARY_NAME", "nova")
 	manualURL := strings.TrimSpace(firstEnv("NOVA_CLIENT_DOWNLOAD_URL", "NOVA_DOWNLOAD_URL"))
@@ -497,34 +466,6 @@ func runInstall(_ []string) error {
 		return fmt.Errorf("安装失败：未检测到可执行文件 %s", target)
 	}
 	info(fmt.Sprintf("CLI 已安装到：%s", target))
-
-	if err := writeConfig(configPath, endpoint, token); err != nil {
-		return err
-	}
-	info(fmt.Sprintf("配置已写入 %s", configPath))
-
-	if binaryPath == filepath.Join(home, ".local", "bin") {
-		pathEnv := os.Getenv("PATH")
-		if !strings.Contains(":"+pathEnv+":", ":"+binaryPath+":") {
-			info(fmt.Sprintf("%s 未在 PATH，建议追加：", binaryPath))
-			info(fmt.Sprintf("  export PATH=\"%s:%s\"", os.Getenv("PATH"), binaryPath))
-		}
-	}
-
-	if hasTTY() {
-		shellRC := detectShellRC(home)
-		if shellRC != "" {
-			answer, err := promptInput(fmt.Sprintf("是否将配置自动加入 %s（y/N）? ", shellRC), "n")
-			if err != nil {
-				return err
-			}
-			if isYes(answer) {
-				if err := appendSource(shellRC, configPath); err != nil {
-					return err
-				}
-			}
-		}
-	}
 	return nil
 }
 

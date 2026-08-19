@@ -17,6 +17,12 @@
 - `POST /v1/apps/{name}/restart` -> `nova restart`
 - `GET /v1/apps/{name}/status` -> `nova status`
 - `GET /v1/apps/{name}/logs` -> `nova logs`
+  - `?lines=<n>`（回放，默认 100）
+  - `?follow=true`（流式，`nova logs <name> -f`）
 - `DELETE /v1/apps/{name}` -> `nova remove`
 - `GET /v1/apps` -> `nova list`
 
+## 变更记录（里程碑）
+
+- `a5c2ecb`：实现 Agent 与 CLI 的 runtime 控制（start/stop/restart）、部署替换和状态/日志查询
+- `176d777`：补齐 `nova logs -f` 端到端流式日志能力

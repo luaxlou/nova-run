@@ -31,6 +31,8 @@
 - `GET /v1/apps`
 - `GET /v1/apps/{name}/status`
 - `GET /v1/apps/{name}/logs`
+  - `?lines=<n>`：返回最近日志行数（默认 100）
+  - `?follow=true`：返回实时日志流（配合 `nova logs <app> -f`）
 
 ## 目录预期（建议）
 ```text
@@ -53,5 +55,15 @@ nova-run/
 ```
 
 ## 当前状态
-当前提交完成了方案改进与最小骨架，未包含完整上线实现；旧 `glow-ops` 功能代码保留以便迁移。请按 OpenSpec 变更逐步替换。
+当前提交已完成单机控制最小闭环：制品打包、部署替换、服务生命周期、状态、日志（含流式）与卸载安装脚本。
 
+## 发布上线清单
+- 目标机器运行 `scripts/install-agent.sh`
+- 确认 `NOVA_AGENT_TOKEN` 与 `/etc/nova-agent/token` 保持一致
+- 准备 artifact（包含 `run`）并执行 `nova deploy <app> <artifact_dir>`
+- 快速验收命令：
+  - `nova list`
+  - `nova status <app>`
+  - `nova logs <app> [-f]`
+  - `curl -s http://127.0.0.1:32102/health`
+- 通过后提交 Release Note 和版本标签

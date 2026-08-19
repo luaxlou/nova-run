@@ -8,15 +8,17 @@ LISTEN_ADDR="${LISTEN_ADDR:-:32102}"
 APP_ROOT="${APP_ROOT:-/var/lib/nova/apps}"
 
 install -m 0755 "${APP}" "${INSTALL_DIR}/${APP}"
+mkdir -p "${APP_ROOT}"
 
-cat > /tmp/nova@.service <<'EOF'
+cat > /tmp/nova-agent.service <<'EOF'
 [Unit]
-Description=Nova App %i
+Description=Nova Run Agent
 After=network.target
 
 [Service]
-WorkingDirectory=/var/lib/nova/apps/%i
-ExecStart=/usr/local/bin/nova-agent -listen __LISTEN__ -app-root __APP_ROOT__ -token-file __TOKEN__
+Type=simple
+WorkingDirectory=__APP_ROOT__
+ExecStart=__INSTALL_DIR__/nova-agent -listen __LISTEN__ -app-root __APP_ROOT__ -token-file __TOKEN__
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM
@@ -26,14 +28,14 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 EOF
 
-sed -i "s|__LISTEN__|${LISTEN_ADDR}|" /tmp/nova@.service
-sed -i "s|__APP_ROOT__|${APP_ROOT}|" /tmp/nova@.service
-sed -i "s|__TOKEN__|${TOKEN_FILE}|" /tmp/nova@.service
+sed -i "s|__LISTEN__|${LISTEN_ADDR}|" /tmp/nova-agent.service
+sed -i "s|__APP_ROOT__|${APP_ROOT}|" /tmp/nova-agent.service
+sed -i "s|__TOKEN__|${TOKEN_FILE}|" /tmp/nova-agent.service
+sed -i "s|__INSTALL_DIR__|${INSTALL_DIR}|" /tmp/nova-agent.service
 
-mv /tmp/nova@.service /etc/systemd/system/nova@.service
+mv /tmp/nova-agent.service /etc/systemd/system/nova-agent.service
 systemctl daemon-reload
-systemctl enable --now nova@.service
+systemctl enable --now nova-agent.service
 
-echo "nova-agent installed, binary: ${INSTALL_DIR}/${APP}, unit: nova@.service"
+echo "nova-agent installed, binary: ${INSTALL_DIR}/${APP}, unit: nova-agent.service"
 echo "token file: ${TOKEN_FILE}"
-

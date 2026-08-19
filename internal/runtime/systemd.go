@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -33,6 +34,41 @@ func (c *Controller) systemctl(args ...string) error {
 	return nil
 }
 
+func (c *Controller) systemctlShow(name string) (map[string]string, error) {
+	out, err := exec.Command(
+		"systemctl",
+		"show",
+		"--no-pager",
+		"--property=ActiveState",
+		"--property=SubState",
+		"--property=MainPID",
+		"--property=ActiveEnterTimestamp",
+		"--property=ExecMainStatus",
+		c.serviceName(name),
+	).CombinedOutput()
+	props := parseSystemdProperties(string(out))
+	if err != nil {
+		msg := strings.ToLower(err.Error())
+		if strings.Contains(msg, "not found") || strings.Contains(msg, "could not be found") {
+			return props, nil
+		}
+		return props, fmt.Errorf("%s: %s", err, strings.TrimSpace(string(out)))
+	}
+	return props, nil
+}
+
+func parseSystemdProperties(output string) map[string]string {
+	result := make(map[string]string)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		if !strings.Contains(line, "=") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		result[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	return result
+}
+
 func (c *Controller) Start(name string) error {
 	return c.systemctl("start", c.serviceName(name))
 }
@@ -46,12 +82,33 @@ func (c *Controller) Restart(name string) error {
 }
 
 func (c *Controller) Status(name string) (Status, error) {
-	return Status{
+	props, err := c.systemctlShow(name)
+	if err != nil {
+		return Status{}, err
+	}
+	status := Status{
 		State:    "inactive",
 		SubState: "dead",
 		PID:      "0",
-		Started:  "",
-		ExitCode: "",
-	}, nil
+		Started:  "n/a",
+		ExitCode: "0",
+	}
+	if active := strings.TrimSpace(props["ActiveState"]); active != "" {
+		status.State = active
+	}
+	if sub := strings.TrimSpace(props["SubState"]); sub != "" {
+		status.SubState = sub
+	}
+	if pid := strings.TrimSpace(props["MainPID"]); pid != "" {
+		if _, e := strconv.Atoi(pid); e == nil {
+			status.PID = pid
+		}
+	}
+	if started := strings.TrimSpace(props["ActiveEnterTimestamp"]); started != "" && started != "n/a" {
+		status.Started = started
+	}
+	if code := strings.TrimSpace(props["ExecMainStatus"]); code != "" {
+		status.ExitCode = code
+	}
+	return status, nil
 }
-

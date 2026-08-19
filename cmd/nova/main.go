@@ -91,7 +91,9 @@ func main() {
 			fmt.Printf("logs failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println(stream)
+		for _, line := range stream {
+			fmt.Println(line)
+		}
 	case "list":
 		list, err := cli.List(ctx)
 		if err != nil {
@@ -139,4 +141,3 @@ func ensureName(rest []string) {
 		os.Exit(1)
 	}
 }
-

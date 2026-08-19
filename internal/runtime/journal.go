@@ -13,9 +13,10 @@ func JournalTailCommand(app string, follow bool, lines int) *exec.Cmd {
 		lines = 100
 	}
 	args = append(args, "-n", strconv.Itoa(lines))
+	args = append(args, "--no-pager")
 	if follow {
 		args = append(args, "-f")
 	}
+	args = append(args, "-o", "cat")
 	return exec.Command("journalctl", args...)
 }
-

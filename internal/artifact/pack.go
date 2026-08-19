@@ -7,10 +7,19 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func PackDir(sourceDir, destPath string) error {
-	_ = filepath.Clean(sourceDir)
+	sourceDir = filepath.Clean(sourceDir)
+	info, err := os.Stat(sourceDir)
+	if err != nil {
+		return fmt.Errorf("source dir invalid: %w", err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("source path is not a directory")
+	}
+
 	target, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("create archive: %w", err)
@@ -22,10 +31,53 @@ func PackDir(sourceDir, destPath string) error {
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
-	// Minimal archive helper, placeholder for full artifact pack logic.
-	// Keep as pass-through for initial milestone.
-	_ = io.Discard
-	_ = tw
+	walkErr := filepath.WalkDir(sourceDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return fmt.Errorf("resolve relative path: %w", err)
+		}
+		relPath = filepath.ToSlash(relPath)
+	if relPath == "." {
+			return nil
+		}
+		if strings.HasPrefix(relPath, "..") {
+			return fmt.Errorf("invalid path in source: %s", relPath)
+		}
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		header, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return fmt.Errorf("header for %s: %w", relPath, err)
+		}
+		header.Name = relPath
+
+		if err := tw.WriteHeader(header); err != nil {
+			return fmt.Errorf("write header for %s: %w", relPath, err)
+		}
+		if d.IsDir() {
+			return nil
+		}
+		src, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("open %s: %w", relPath, err)
+		}
+		if _, err := io.Copy(tw, src); err != nil {
+			_ = src.Close()
+			return fmt.Errorf("copy %s: %w", relPath, err)
+		}
+		if err := src.Close(); err != nil {
+			return fmt.Errorf("close %s: %w", relPath, err)
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return walkErr
+	}
 	return nil
 }
-

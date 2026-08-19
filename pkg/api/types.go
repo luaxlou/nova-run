@@ -1,6 +1,9 @@
 package api
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"net/http"
+)
 
 // TypeMeta describes an individual object in an API response or request
 // with strings representing the type of the object and its API schema version.
@@ -274,4 +277,17 @@ type TCPRequest struct {
 	AppName string          `json:"app_name"`
 	APIKey  string          `json:"api_key"`
 	Payload json.RawMessage `json:"payload,omitempty"`
+}
+
+func RenderJSON(w http.ResponseWriter, response any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func RenderJSONError(w http.ResponseWriter, code int, message string) {
+	w.WriteHeader(code)
+	RenderJSON(w, Response{
+		Success: false,
+		Message: message,
+	})
 }

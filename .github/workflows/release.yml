@@ -41,36 +41,24 @@ jobs:
           echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           echo "buildDate=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
 
-      - name: Build glow-server
+      - name: Build nova-agent
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          VERSION: ${{ steps.version.outputs.version }}
-          COMMIT: ${{ steps.version.outputs.commit }}
-          BUILD_DATE: ${{ steps.version.outputs.buildDate }}
         run: |
           mkdir -p bin
-          go build -ldflags "\
-            -X github.com/luaxlou/glow/cmd/glow-server/cmd.version=${VERSION} \
-            -X github.com/luaxlou/glow/cmd/glow-server/cmd.commit=${COMMIT} \
-            -X github.com/luaxlou/glow/cmd/glow-server/cmd.buildDate=${BUILD_DATE}" \
-            -o bin/glow-server-${{ matrix.goos }}-${{ matrix.goarch }} \
-            cmd/glow-server/main.go
+          go build \
+            -o bin/nova-agent-${{ matrix.goos }}-${{ matrix.goarch }} \
+            cmd/nova-agent/main.go
 
-      - name: Build glow
+      - name: Build nova
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          VERSION: ${{ steps.version.outputs.version }}
-          COMMIT: ${{ steps.version.outputs.commit }}
-          BUILD_DATE: ${{ steps.version.outputs.buildDate }}
         run: |
-          go build -ldflags "\
-            -X github.com/luaxlou/glow/cmd/glow/cmd.glowVersion=${VERSION} \
-            -X github.com/luaxlou/glow/cmd/glow/cmd.glowCommit=${COMMIT} \
-            -X github.com/luaxlou/glow/cmd/glow/cmd.glowBuildDate=${BUILD_DATE}" \
-            -o bin/glow-${{ matrix.goos }}-${{ matrix.goarch }} \
-            cmd/glow/main.go
+          go build \
+            -o bin/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
+            cmd/nova/main.go
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -93,10 +81,7 @@ jobs:
       - name: Prepare release files
         run: |
           mkdir -p release
-          # Copy all binaries from artifact directories to release directory
           find artifacts -type f -exec cp {} release/ \;
-          # List files to verify
-          ls -lh release/
 
       - name: Generate SHA256 checksums
         run: |
@@ -112,25 +97,4 @@ jobs:
           gh release create ${VERSION} \
             release/* \
             --title "${VERSION}" \
-            --notes "## Glow Server ${VERSION}
-
-          ### 下载方式
-          \`\`\`bash
-          # Linux/macOS 一键安装
-          curl -fsSL https://raw.githubusercontent.com/luaxlou/glow/main/scripts/install.sh | sudo bash
-
-          # 或者本地安装（不常驻）
-          curl -fsSL https://raw.githubusercontent.com/luaxlou/glow/main/scripts/install-local.sh | bash
-          \`\`\`
-
-          ### 二进制文件
-          - \`glow-server\`: 服务端
-          - \`glow\`: 客户端 CLI
-
-          ### 校验
-          \`\`\`bash
-          # 下载 SHA256SUMS.txt 后校验
-          sha256sum -c SHA256SUMS.txt
-          \`\`\`
-
-          完整更新日志请查看 [CHANGELOG.md](https://github.com/luaxlou/glow/blob/main/CHANGELOG.md)"
+            --notes "nova-run ${VERSION}"

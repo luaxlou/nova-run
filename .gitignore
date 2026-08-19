@@ -37,6 +37,9 @@ glow.db
 *.log
 glow
 glow-server
+/.nova
+nova
+nova-agent
 
 # Example binaries
 examples/*/simple-app

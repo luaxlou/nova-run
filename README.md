@@ -1,58 +1,57 @@
-# Glow Ops
+# nova-run
 
-`glow-ops` 是运维与控制面仓库，提供 `glow-server` 与 `glow-cli`。
+`nova-run` 是一个面向单服务器、无状态、语言无关的应用生命周期管理工具（`nova` + `nova-agent`）。
 
-## 快速决策：我该看哪个仓库？
+## 关键能力（当前阶段）
+- `nova deploy <app> <artifact_dir>`
+- `nova start <app>`
+- `nova stop <app>`
+- `nova restart <app>`
+- `nova status <app>`
+- `nova logs <app> [-f]`
+- `nova list`
+- `nova remove <app>`
 
-| 你的目标 | 去哪个仓库 |
-|---|---|
-| 写业务代码、接入 SDK/starter | [`glow`](https://github.com/luaxlou/glow) |
-| 做发布与运维编排、控制面治理 | [`glow-ops`](https://github.com/luaxlou/glow-ops) |
+### 本地与远端分工
+- `nova`（本地）：构建产物、目标切换、本地 artifact 历史（如 `~/.nova/artifacts`）与 rollback 重部署。
+- `nova-agent`（远端）：监听固定 API，做原子替换、systemd 控制、journald 读取，不维护数据库。
 
-## 双仓关系图
+### 设计原则
+1. Agent 是无状态的（`State = 0`）。
+2. Build 在本地执行。
+3. Artifact 约定 `run`。
+4. systemd 是 runtime。
+5. journald 是日志系统。
+6. 不保留服务端版本历史。
 
+## API 形态（v1）
+- `PUT /v1/apps/{name}`
+- `DELETE /v1/apps/{name}`
+- `POST /v1/apps/{name}/start|stop|restart`
+- `GET /v1/apps`
+- `GET /v1/apps/{name}/status`
+- `GET /v1/apps/{name}/logs`
+
+## 目录预期（建议）
 ```text
-+-------------------+         depends on starters         +-------------------+
-|      glow-ops     | ----------------------------------> |       glow        |
-| (server/cli/ops)  |                                     | (starter/sdk)     |
-+-------------------+                                     +-------------------+
+nova-run/
+├── cmd/
+│   ├── nova/
+│   │   └── main.go
+│   └── nova-agent/
+│       └── main.go
+├── internal/
+│   ├── agent/
+│   ├── artifact/
+│   ├── client/
+│   ├── deploy/
+│   └── runtime/
+├── scripts/
+│   ├── install-agent.sh
+│   └── uninstall-agent.sh
+└── README.md
 ```
 
-## 这个仓库解决什么问题
+## 当前状态
+当前提交完成了方案改进与最小骨架，未包含完整上线实现；旧 `glow-ops` 功能代码保留以便迁移。请按 OpenSpec 变更逐步替换。
 
-如果你需要管理应用运行生命周期与运维能力（而不是写业务代码），你应该使用这个仓库：
-
-- 应用生命周期编排（start/stop/restart/health/rollback）
-- 进程托管与日志管理
-- 资源绑定、状态管理
-- 控制面 API 与 CLI
-
-## 核心组件
-
-- `cmd/glow-server`：服务端入口
-- `cmd/glow`：CLI 入口
-- `internal/apiserver`：控制面 HTTP API
-- `internal/manager`：运行与编排核心逻辑
-- `internal/configmanager` / `internal/statemanager`：配置与状态持久化
-
-## 与框架仓关系
-
-`glow-ops` 依赖框架仓 [`glow`](https://github.com/luaxlou/glow) 的 starter 能力（如 HTTP/SQLite 适配）。
-
-依赖策略见：[`docs/framework-dependency-policy.md`](./docs/framework-dependency-policy.md)
-
-## 文档
-
-- [`docs/server_manual.md`](./docs/server_manual.md)
-- [`docs/cli_manual.md`](./docs/cli_manual.md)
-
-## 开发与验证
-
-```bash
-go test ./...
-go vet ./...
-```
-
-## 相关仓库
-
-- 应用框架：[`glow`](https://github.com/luaxlou/glow)

@@ -73,6 +73,39 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body io.Rea
 	return payload, nil
 }
 
+func (c *Client) doRequestStream(ctx context.Context, method, path string, body io.Reader, contentType string, sink io.Writer) error {
+	endpoint := strings.TrimRight(c.Endpoint, "/") + "/" + strings.TrimLeft(path, "/")
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", c.authHeader())
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		payload, _ := io.ReadAll(resp.Body)
+		msg := strings.TrimSpace(string(payload))
+		if msg == "" {
+			msg = resp.Status
+		}
+		return fmt.Errorf("http %d: %s", resp.StatusCode, msg)
+	}
+	if _, err := io.Copy(sink, resp.Body); err != nil {
+		return fmt.Errorf("read stream: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) parseResponse(payload []byte, out any) error {
 	if len(payload) == 0 {
 		return nil
@@ -225,13 +258,13 @@ func (c *Client) Status(ctx context.Context, name string) (string, error) {
 }
 
 func (c *Client) Logs(ctx context.Context, name string, follow bool) ([]string, error) {
+	if follow {
+		return nil, fmt.Errorf("follow mode should use LogsStream")
+	}
 	if name == "" {
 		return nil, fmt.Errorf("app name required")
 	}
 	path := "/v1/apps/" + url.PathEscape(name) + "/logs"
-	if follow {
-		path += "?follow=true"
-	}
 	payload, err := c.doRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return nil, err
@@ -249,6 +282,17 @@ func (c *Client) Logs(ctx context.Context, name string, follow bool) ([]string, 
 		return lines, nil
 	}
 	return lines, nil
+}
+
+func (c *Client) LogsStream(ctx context.Context, name string, out io.Writer) error {
+	if name == "" {
+		return fmt.Errorf("app name required")
+	}
+	if out == nil {
+		return fmt.Errorf("output writer required")
+	}
+	path := "/v1/apps/" + url.PathEscape(name) + "/logs?follow=true"
+	return c.doRequestStream(ctx, http.MethodGet, path, nil, "", out)
 }
 
 func (c *Client) List(ctx context.Context) ([]string, error) {

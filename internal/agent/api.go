@@ -2,6 +2,7 @@ package agent
 
 import (
 	"fmt"
+	"bufio"
 	"io"
 	"net/http"
 	"os"
@@ -141,7 +142,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if strings.EqualFold(query.Get("follow"), "1") || strings.EqualFold(query.Get("follow"), "true") {
-				_ = api.RenderJSONError(w, http.StatusBadRequest, "follow logs not supported yet")
+				s.handleLogsFollow(w, r, name, lines)
 				return
 			}
 			cmd := runtime.JournalTailCommand(name, false, lines)
@@ -161,6 +162,69 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	default:
 		_ = api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
 	}
+}
+
+func (s *Server) handleLogsFollow(w http.ResponseWriter, r *http.Request, name string, lines int) {
+	ctx := r.Context()
+	if lines <= 0 {
+		lines = 100
+	}
+	cmd := runtime.JournalTailCommand(name, true, lines)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		_ = api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		_ = api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		_ = cmd.Process.Kill()
+		_ = api.RenderJSONError(w, http.StatusInternalServerError, "response writer does not support streaming")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	stream := streamWriter{writer: w, flusher: flusher}
+	go func() {
+		defer func() { _ = stderr.Close() }()
+		s := bufio.NewScanner(stderr)
+		for s.Scan() {
+			_, _ = stream.Write(append(s.Bytes(), '\n'))
+		}
+	}()
+	go func() {
+		<-ctx.Done()
+		_ = cmd.Process.Kill()
+	}()
+
+	_, _ = io.Copy(stream, stdout)
+	_ = stdout.Close()
+	_ = cmd.Wait()
+}
+
+type streamWriter struct {
+	writer  io.Writer
+	flusher http.Flusher
+}
+
+func (s streamWriter) Write(p []byte) (int, error) {
+	n, err := s.writer.Write(p)
+	if s.flusher != nil {
+		s.flusher.Flush()
+	}
+	return n, err
 }
 
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name string) {

@@ -86,13 +86,20 @@ func main() {
 	case "logs":
 		ensureName(rest)
 		follow := len(rest) > 1 && strings.EqualFold(rest[1], "-f")
-		stream, err := cli.Logs(ctx, rest[0], follow)
-		if err != nil {
-			fmt.Printf("logs failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, line := range stream {
-			fmt.Println(line)
+		if follow {
+			if err := cli.LogsStream(ctx, rest[0], os.Stdout); err != nil {
+				fmt.Printf("logs failed: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			stream, err := cli.Logs(ctx, rest[0], follow)
+			if err != nil {
+				fmt.Printf("logs failed: %v\n", err)
+				os.Exit(1)
+			}
+			for _, line := range stream {
+				fmt.Println(line)
+			}
 		}
 	case "list":
 		list, err := cli.List(ctx)

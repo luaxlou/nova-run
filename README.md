@@ -48,20 +48,50 @@ nova-run/
 │   ├── client/
 │   ├── deploy/
 │   └── runtime/
+├── pkg/
+│   └── api/
 ├── scripts/
+│   ├── init-client.sh
 │   ├── install-agent.sh
 │   └── uninstall-agent.sh
+├── docs/
+│   └── nova-run-spec.md
 └── README.md
 ```
 
-## 当前状态
-当前提交已完成单机控制最小闭环：制品打包、部署替换、服务生命周期、状态、日志（含流式）与卸载安装脚本。
+说明：如果你看到 `glow` 命名的运维文档或脚本，均应按本仓库 nova-run 约定优先处理，本 README 为一次性来源。
+
+## AI 提示词（团队对外协作/运维机器人可直接复制）
+```text
+该项目已切换为 nova-run（nova + nova-agent）架构，不再走 glow-ops 历史控制面。
+当前服务器：<your-domain>（nova-agent 监听端口 32102）。
+请按下面顺序协助我发布并运维：
+1) 本地安装客户端：`go build -o dist/nova ./cmd/nova`，将 `dist/nova` 放入 PATH。
+2) 服务端部署：在 Linux 端运行 `scripts/install-agent.sh`。
+3) 本地客户端初始化：执行 `bash scripts/init-client.sh`，交互输入:
+   - 远端访问地址（例如 `http://<your-domain>:32102`）
+   - 与服务端一致的 token（即 `/etc/nova-agent/token` 中内容）
+4) 本地发布上线：准备 artifact（含 `run`），执行 `nova deploy <app> <artifact_dir>`。
+5) 验证：`nova list`、`nova status <app>`、`nova logs <app> [-f]`，以及 `curl -s http://<your-domain>:32102/health`。
+```
+
+## 本地客户端初始化（交互式）
+
+```bash
+bash scripts/init-client.sh
+```
+
+脚本会依次要求：
+- 远端访问地址（例如 `http://<your-domain>:32102`）
+- 服务端连接密钥（与 `/etc/nova-agent/token` 一致）
+
+初始化会把配置写入 `~/.nova/client.env`，并可选自动追加 `source ~/.nova/client.env` 到当前 shell 的启动文件。
 
 ## 发布上线清单
 - 目标机器运行 `scripts/install-agent.sh`
-- 确认 `NOVA_AGENT_TOKEN` 与 `/etc/nova-agent/token` 保持一致
+- 确认 `/etc/nova-agent/token` 与本地 `NOVA_AGENT_TOKEN` 一致
 - 准备 artifact（包含 `run`）并执行 `nova deploy <app> <artifact_dir>`
-- Linux 服务器发布时需先交付 Linux amd64 二进制：
+- Linux 服务器发布时先交付 Linux amd64 二进制：
   - `GOOS=linux GOARCH=amd64 go build -o dist/nova-agent ./cmd/nova-agent`
   - 将该产物上传至服务端，再用 `install-agent.sh` 安装。
 - 快速验收命令：

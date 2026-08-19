@@ -17,3 +17,5 @@
 3. 本地构建并上传 `nova` Linux amd64 二进制：
    - `GOOS=linux GOARCH=amd64 go build -o dist/nova ./cmd/nova`
 4. 在服务端执行 `install-agent.sh`（会安装并启动 `nova agent`）
+
+说明：后续一切项目生命周期操作（deploy/start/stop/restart/status/logs）都通过 `nova` 进行，不需要再执行 `nova install`。

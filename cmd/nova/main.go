@@ -27,7 +27,6 @@ func usage() {
 
 Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
-  nova install        # 安装/更新本地 Nova CLI 二进制
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova deploy <app> <artifact_dir>
   nova start <app>
@@ -70,12 +69,6 @@ func main() {
 	rest := args[2:]
 
 	switch cmd {
-	case "install":
-		if err := runInstall(rest); err != nil {
-			fmt.Printf("install failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("install finished")
 	case "agent":
 		if err := runAgent(rest); err != nil {
 			fmt.Printf("agent failed: %v\n", err)
@@ -217,7 +210,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "install" {
+	if cmd == "agent" {
 		return nil
 	}
 	if runtimeConfigReady() {

@@ -13,7 +13,7 @@ import (
 const (
 	DefaultPort    = 32102
 	DefaultTCPPort = 32101
-	ConfigDir      = ".glow"
+	ConfigDir      = ".nova"
 	ConfigName     = "server.yaml"
 )
 

@@ -96,14 +96,14 @@ func StartApp(req api.StartAppRequest) error {
 		return fmt.Errorf("failed to create app dir: %w", err)
 	}
 
-	// 2. Rename Binary: glow_<name>
+	// 2. Rename Binary: nova_<name>
 	srcBinary := req.Command
 
-	dstBinaryName := "glow_" + req.Name
+	dstBinaryName := "nova_" + req.Name
 	dstBinaryPath := filepath.Join(appDir, dstBinaryName)
 
 	// If srcBinary is empty, try to fall back to the previously deployed binary.
-	// Priority: 1) deployed glow_<name>, 2) existingApp.Command, 3) error
+	// Priority: 1) deployed nova_<name>, 2) existingApp.Command, 3) error
 	if srcBinary == "" {
 		if _, err := os.Stat(dstBinaryPath); err == nil {
 			// Use the deployed binary
@@ -209,17 +209,17 @@ func StartApp(req api.StartAppRequest) error {
 	}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("OP_APP_NAME=%s", app.Name))
 
-	// 3. Run as glow user
-	if u, err := user.Lookup("glow"); err == nil {
+	// 3. Run as nova user
+	if u, err := user.Lookup("nova"); err == nil {
 		uid, _ := strconv.Atoi(u.Uid)
 		gid, _ := strconv.Atoi(u.Gid)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)},
 		}
 	} else {
-		// Fallback: If 'glow' user doesn't exist, try to use current user
+		// Fallback: If 'nova' user doesn't exist, try to use current user
 		// But for debugging exec format error, we might want to ensure we aren't switching to a user with different env
-		// log.Printf("Warning: 'glow' user not found, running as current user")
+		// log.Printf("Warning: 'nova' user not found, running as current user")
 	}
 
 	// 4. Logs with rotation

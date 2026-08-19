@@ -15,7 +15,7 @@ import (
 func TestAppManager_StartApp(t *testing.T) {
 	// Setup temp dir
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("glow.db") })
+	t.Cleanup(func() { _ = os.Remove("nova.db") })
 
 	// Initialize Config
 	if err := configmanager.EnsureInitialized(); err != nil {
@@ -56,7 +56,7 @@ done
 	}
 
 	// Verify Binary Renamed
-	renamedBin := filepath.Join(appDir, "glow_test-app")
+	renamedBin := filepath.Join(appDir, "nova_test-app")
 	if _, err := os.Stat(renamedBin); os.IsNotExist(err) {
 		t.Errorf("Binary not renamed/copied")
 	}
@@ -111,7 +111,7 @@ done
 
 func TestAppManager_StartApp_FallbackToDeployedBinaryWhenCommandMissing(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("glow.db") })
+	t.Cleanup(func() { _ = os.Remove("nova.db") })
 
 	// Reset DB connection to ensure fresh state
 	glowsqlite.Reload()
@@ -123,14 +123,14 @@ func TestAppManager_StartApp_FallbackToDeployedBinaryWhenCommandMissing(t *testi
 	configmanager.SetSystemConfig("api_key", "test-key")
 	configmanager.SetSystemConfig("server_url", "127.0.0.1:8080")
 
-	// Pre-create deployed binary at apps/<name>/glow_<name>
+	// Pre-create deployed binary at apps/<name>/nova_<name>
 	// Use a unique app name to avoid conflicts with other tests
 	appName := "fallback-test-app"
 	appDir := filepath.Join(tmpDir, "apps", appName)
 	if err := os.MkdirAll(appDir, 0755); err != nil {
 		t.Fatalf("Failed to create app dir: %v", err)
 	}
-	deployedBin := filepath.Join(appDir, "glow_"+appName)
+	deployedBin := filepath.Join(appDir, "nova_"+appName)
 	scriptContent := `#!/bin/sh
 echo "Starting dummy app"
 while true; do
@@ -185,7 +185,7 @@ done
 
 func TestAppManager_StopApp_KeepIngressDoesNotRemoveConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("glow.db") })
+	t.Cleanup(func() { _ = os.Remove("nova.db") })
 
 	glowsqlite.Reload()
 

@@ -55,7 +55,7 @@ func ProvisionMySQL(appName string, req ProvisionMySQLRequest) api.Response {
 	// 1. Load System MySQL Config (Admin)
 	var adminConfig MySQLConfig
 	if err := configmanager.GetSystemConfigJSON("mysql_info", &adminConfig); err != nil {
-		return api.Response{Success: false, Message: "MySQL system config not found. Run 'glow-server add mysql' first."}
+		return api.Response{Success: false, Message: "MySQL system config not found. Run 'nova-server add mysql' first."}
 	}
 	if adminConfig.Host == "" {
 		return api.Response{Success: false, Message: "MySQL not configured."}

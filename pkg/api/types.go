@@ -213,7 +213,7 @@ type NginxSystemConfig struct {
 	UpdatedAt  interface{} `json:"updated_at" yaml:"updated_at"`
 }
 
-// ServerInfo contains information about the glow-server instance
+// ServerInfo contains information about the nova-server instance
 type ServerInfo struct {
 	PID         int    `json:"pid"`
 	DataDir     string `json:"data_dir"`

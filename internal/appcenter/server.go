@@ -166,10 +166,10 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		// Security Check: Deny any request attempting to act as or query "glow-server"
-		if req.AppName == "glow-server" {
-			log.Printf("Security Alert: Attempt to access reserved app name 'glow-server' via TCP from %s", conn.RemoteAddr())
-			resp := api.Response{Success: false, Message: "Access denied: 'glow-server' is a reserved system application."}
+		// Security Check: Deny any request attempting to act as or query "nova-server"
+		if req.AppName == "nova-server" {
+			log.Printf("Security Alert: Attempt to access reserved app name 'nova-server' via TCP from %s", conn.RemoteAddr())
+			resp := api.Response{Success: false, Message: "Access denied: 'nova-server' is a reserved system application."}
 			encoder.Encode(resp)
 			return // Close connection immediately
 		}
@@ -183,7 +183,7 @@ func handleConnection(conn net.Conn) {
 				// Not found is not necessarily an error to log loudly, but we return false
 				resp = api.Response{Success: false, Message: err.Error()}
 			} else {
-				// No need to sanitize here if we strictly enforce AppName != glow-server
+				// No need to sanitize here if we strictly enforce AppName != nova-server
 				// and assume app configs don't contain sensitive system keys.
 				// But sanitizing is still a good defense-in-depth if we had other shared keys.
 				// For now, based on user instruction "not a filter issue", we return as is.
@@ -196,8 +196,8 @@ func handleConnection(conn net.Conn) {
 				resp = api.Response{Success: false, Message: "Invalid payload"}
 			} else {
 				// Additional check inside payload
-				if appInfo.Name == "glow-server" {
-					resp = api.Response{Success: false, Message: "Registration denied: 'glow-server' is reserved."}
+				if appInfo.Name == "nova-server" {
+					resp = api.Response{Success: false, Message: "Registration denied: 'nova-server' is reserved."}
 				} else {
 					enrichAppInfoFromPID(&appInfo)
 					// Merge with existing persisted info to avoid clobbering required fields.
@@ -219,8 +219,8 @@ func handleConnection(conn net.Conn) {
 				resp = api.Response{Success: false, Message: "Invalid payload"}
 			} else {
 				// Additional check inside payload
-				if appInfo.Name == "glow-server" {
-					resp = api.Response{Success: false, Message: "Start denied: 'glow-server' is reserved."}
+				if appInfo.Name == "nova-server" {
+					resp = api.Response{Success: false, Message: "Start denied: 'nova-server' is reserved."}
 				} else {
 					connectedAppName = appInfo.Name
 					RegisterActiveApp(appInfo, conn)

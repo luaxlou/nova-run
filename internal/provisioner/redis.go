@@ -46,7 +46,7 @@ func ProvisionRedis(appName string, req ProvisionRedisRequest) api.Response {
 	// 1. Load System Redis Config (Admin)
 	var adminConfig RedisConfig
 	if err := configmanager.GetSystemConfigJSON("redis_info", &adminConfig); err != nil {
-		return api.Response{Success: false, Message: "Redis system config not found. Run 'glow-server add redis' first."}
+		return api.Response{Success: false, Message: "Redis system config not found. Run 'nova-server add redis' first."}
 	}
 	if adminConfig.Host == "" {
 		return api.Response{Success: false, Message: "Redis not configured."}

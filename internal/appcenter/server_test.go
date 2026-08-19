@@ -10,7 +10,7 @@ import (
 func TestMergeAppInfo_PreservesCommandWhenIncomingIsPartial(t *testing.T) {
 	existing := api.AppInfo{
 		Name:        "four-server",
-		Command:     "/data/apps/four-server/glow_four-server",
+		Command:     "/data/apps/four-server/nova_four-server",
 		WorkingDir:  "/data/apps/four-server",
 		Env:         map[string]string{"A": "B"},
 		Args:        []string{"--x", "1"},

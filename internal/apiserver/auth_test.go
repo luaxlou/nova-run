@@ -12,7 +12,7 @@ import (
 )
 
 func setupTestDB(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "glow.db")
+	dbPath := filepath.Join(t.TempDir(), "nova.db")
 	glowsqlite.Reload()
 	glowsqlite.Init(dbPath)
 
@@ -185,7 +185,7 @@ func TestRequireAPIKey_CaseInsensitiveBearer(t *testing.T) {
 
 func TestRequireAPIKey_ServerNotConfigured(t *testing.T) {
 	// Setup DB but don't set api_key
-	dbPath := filepath.Join(t.TempDir(), "glow.db")
+	dbPath := filepath.Join(t.TempDir(), "nova.db")
 	glowsqlite.Reload()
 	glowsqlite.Init(dbPath)
 

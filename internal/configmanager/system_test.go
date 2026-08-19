@@ -9,7 +9,7 @@ import (
 )
 
 func TestDeleteSystemConfig_Idempotent(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "glow.db")
+	dbPath := filepath.Join(t.TempDir(), "nova.db")
 	glowsqlite.Reload()
 	glowsqlite.Init(dbPath)
 

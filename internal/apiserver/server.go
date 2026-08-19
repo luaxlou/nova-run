@@ -467,7 +467,7 @@ func (s *Server) handleRestartApp(c *gin.Context) {
 			dataDir = absDir
 		}
 		appDir := filepath.Join(dataDir, "apps", targetApp.Name)
-		dstBinaryPath := filepath.Join(appDir, "glow_"+targetApp.Name)
+		dstBinaryPath := filepath.Join(appDir, "nova_"+targetApp.Name)
 
 		// Check if deployed binary exists
 		if _, err := os.Stat(dstBinaryPath); err == nil {
@@ -705,7 +705,7 @@ func (s *Server) handleServerInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, api.Response{Success: true, Data: serverInfo})
 }
 
-// getVersion returns the version of glow-server
+// getVersion returns the version of nova-server
 func getVersion() string {
 	// Try to get version from git describe
 	if _, err := exec.LookPath("git"); err == nil {

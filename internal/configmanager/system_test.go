@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/luaxlou/glow/starter/glowsqlite"
+	"github.com/luaxlou/glow-ops/internal/storage"
 )
 
 func TestDeleteSystemConfig_Idempotent(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "nova.db")
-	glowsqlite.Reload()
-	glowsqlite.Init(dbPath)
+	storage.Init(dbPath)
+	storage.Reload()
 
 	if err := SetSystemConfig("k1", "v1"); err != nil {
 		t.Fatalf("set: %v", err)

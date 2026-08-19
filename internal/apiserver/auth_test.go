@@ -7,14 +7,14 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/luaxlou/glow-ops/internal/configmanager"
-	"github.com/luaxlou/glow/starter/glowsqlite"
+	"github.com/luaxlou/glow-ops/internal/storage"
 	"path/filepath"
 )
 
 func setupTestDB(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "nova.db")
-	glowsqlite.Reload()
-	glowsqlite.Init(dbPath)
+	storage.Init(dbPath)
+	storage.Reload()
 
 	// Set a test API key
 	if err := configmanager.SetSystemConfig("api_key", "test-api-key-123"); err != nil {
@@ -186,8 +186,8 @@ func TestRequireAPIKey_CaseInsensitiveBearer(t *testing.T) {
 func TestRequireAPIKey_ServerNotConfigured(t *testing.T) {
 	// Setup DB but don't set api_key
 	dbPath := filepath.Join(t.TempDir(), "nova.db")
-	glowsqlite.Reload()
-	glowsqlite.Init(dbPath)
+	storage.Init(dbPath)
+	storage.Reload()
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

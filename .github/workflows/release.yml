@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "要发布的标签（仅在手动触发时可选）"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -33,38 +39,22 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Get version
-        id: version
-        run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          echo "buildDate=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" >> $GITHUB_OUTPUT
-
-      - name: Build nova-agent
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          mkdir -p bin
-          go build \
-            -o bin/nova-agent-${{ matrix.goos }}-${{ matrix.goarch }} \
-            cmd/nova-agent/main.go
-
       - name: Build nova
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          mkdir -p dist
           go build \
-            -o bin/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
-            cmd/nova/main.go
+            -o dist/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/nova
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: binaries-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bin/
+          name: nova-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+          if-no-files-found: error
 
   release:
     needs: build
@@ -80,21 +70,38 @@ jobs:
 
       - name: Prepare release files
         run: |
+          set -euo pipefail
           mkdir -p release
-          find artifacts -type f -exec cp {} release/ \;
+
+          for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
+            nova_bin="artifacts/nova-${target}/nova-${target}"
+            if [ ! -f "$nova_bin" ]; then
+              echo "Missing artifact: $nova_bin"
+              continue
+            fi
+
+            cp "$nova_bin" "release/nova-${target}"
+          done
+
+          if [ -z "$(ls -A release)" ]; then
+            echo "No release packages were generated."
+            exit 1
+          fi
 
       - name: Generate SHA256 checksums
         run: |
           cd release
           sha256sum * > SHA256SUMS.txt
-          cat SHA256SUMS.txt
 
-      - name: Create Release
+      - name: Create or update Release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
         run: |
-          gh release create ${VERSION} \
-            release/* \
-            --title "${VERSION}" \
-            --notes "nova-run ${VERSION}"
+          set -euo pipefail
+          cd release
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" * --clobber
+          else
+            gh release create "$VERSION" * --title "$VERSION" --notes "nova-run ${VERSION}"
+          fi

@@ -225,7 +225,7 @@ func handleConnection(conn net.Conn) {
 					connectedAppName = appInfo.Name
 					RegisterActiveApp(appInfo, conn)
 
-					// 1. Record state (memory & sqlite)
+					// 1. Record state (memory & local file state store)
 					enrichAppInfoFromPID(&appInfo)
 					if existing, err := statemanager.GetApp(appInfo.Name); err == nil && existing != nil {
 						appInfo = mergeAppInfo(*existing, appInfo)
@@ -235,7 +235,7 @@ func handleConnection(conn net.Conn) {
 						// We continue even if save fails, to try to return config
 					}
 
-					// 2. Get Config from SQLite (via configmanager)
+					// 2. Get config from local state store (via configmanager)
 					config, err := configmanager.Get(appInfo.Name)
 					if err != nil {
 						// Config might not exist yet, which is fine

@@ -22,7 +22,7 @@ type ObjectMeta struct {
 // --- Deployment (App) ---
 
 // Deployment represents an application deployment.
-// It maps to the concept of an "App" in Glow.
+// It maps to the concept of an "App" in Nova.
 type Deployment struct {
 	TypeMeta   `json:",inline" yaml:",inline"`
 	ObjectMeta `json:"metadata,omitempty" yaml:"metadata,omitempty"`

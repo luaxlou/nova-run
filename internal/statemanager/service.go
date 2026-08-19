@@ -1,29 +1,17 @@
 package statemanager
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/luaxlou/glow-ops/pkg/api"
-	"github.com/luaxlou/glow/starter/glowsqlite"
+	"github.com/luaxlou/glow-ops/internal/storage"
 )
 
 var (
-	once sync.Once
+	mu   sync.Mutex
 )
-
-const schema = `
-	CREATE TABLE IF NOT EXISTS apps (
-		name TEXT PRIMARY KEY,
-		info_json TEXT NOT NULL,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);`
-
-func init() {
-	glowsqlite.RegisterSchema(schema)
-}
 
 // SaveApp saves or updates the application information.
 func SaveApp(app api.AppInfo) error {
@@ -32,40 +20,27 @@ func SaveApp(app api.AppInfo) error {
 		return err
 	}
 
-	db, err := glowsqlite.DB()
-	if err != nil {
+	if err := storage.SetAppState(app.Name, infoJSON); err != nil {
 		return err
 	}
-
-	query := `
-	INSERT INTO apps (name, info_json, updated_at) 
-	VALUES (?, ?, CURRENT_TIMESTAMP)
-	ON CONFLICT(name) DO UPDATE SET 
-		info_json = excluded.info_json,
-		updated_at = CURRENT_TIMESTAMP;
-	`
-	_, err = db.Exec(query, app.Name, string(infoJSON))
-	return err
+	return nil
 }
 
 // GetApp retrieves application information by name.
 func GetApp(name string) (*api.AppInfo, error) {
-	db, err := glowsqlite.DB()
+	mu.Lock()
+	defer mu.Unlock()
+
+	infoJSON, found, err := storage.GetAppState(name)
 	if err != nil {
 		return nil, err
 	}
-
-	var infoJSON string
-	err = db.QueryRow("SELECT info_json FROM apps WHERE name = ?", name).Scan(&infoJSON)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, fmt.Errorf("app not found: %s", name)
-		}
-		return nil, err
+	if !found {
+		return nil, fmt.Errorf("app not found: %s", name)
 	}
 
 	var app api.AppInfo
-	if err := json.Unmarshal([]byte(infoJSON), &app); err != nil {
+	if err := json.Unmarshal(infoJSON, &app); err != nil {
 		return nil, err
 	}
 	return &app, nil
@@ -73,36 +48,26 @@ func GetApp(name string) (*api.AppInfo, error) {
 
 // DeleteApp removes an application from the database.
 func DeleteApp(name string) error {
-	db, err := glowsqlite.DB()
-	if err != nil {
-		return err
-	}
-	_, err = db.Exec("DELETE FROM apps WHERE name = ?", name)
-	return err
+	mu.Lock()
+	defer mu.Unlock()
+	return storage.DeleteAppState(name)
 }
 
 // ListApps retrieves all applications.
 func ListApps() ([]api.AppInfo, error) {
-	db, err := glowsqlite.DB()
-	if err != nil {
-		return nil, err
-	}
+	mu.Lock()
+	defer mu.Unlock()
 
-	rows, err := db.Query("SELECT info_json FROM apps")
+	rawStates, err := storage.ListAppStates()
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var apps []api.AppInfo
-	for rows.Next() {
-		var infoJSON string
-		if err := rows.Scan(&infoJSON); err != nil {
-			return nil, err
-		}
+	for _, infoJSON := range rawStates {
 		var app api.AppInfo
-		if err := json.Unmarshal([]byte(infoJSON), &app); err != nil {
-			continue
+		if err := json.Unmarshal(infoJSON, &app); err != nil {
+			return nil, err
 		}
 		apps = append(apps, app)
 	}

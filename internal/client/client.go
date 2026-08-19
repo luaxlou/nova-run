@@ -23,13 +23,20 @@ type Client struct {
 }
 
 func NewClient() *Client {
-	endpoint := os.Getenv("NOVA_AGENT_ENDPOINT")
+	endpoint := os.Getenv("NOVA_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("NOVA_AGENT_ENDPOINT")
+	}
 	if endpoint == "" {
 		endpoint = "http://127.0.0.1:32102"
 	}
+	token := os.Getenv("NOVA_TOKEN")
+	if token == "" {
+		token = os.Getenv("NOVA_AGENT_TOKEN")
+	}
 	return &Client{
 		Endpoint: endpoint,
-		Token:    os.Getenv("NOVA_AGENT_TOKEN"),
+		Token:    token,
 	}
 }
 

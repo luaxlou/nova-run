@@ -1,19 +1,19 @@
 # Nova Run Scripts
 
-本目录保留 nova-run 的本地/服务端脚本。
+本目录用于 nova-run 的项目与服务端脚本，均已切换为单二进制 `nova`。
 
 ## 当前建议脚本
 
-- `install-agent.sh`：在 Linux 主机部署 `nova-agent`，安装服务 `nova-agent.service`
-- `uninstall-agent.sh`：卸载 `nova-agent` 与服务文件（保留 `/var/lib/nova`）
-- `init-client.sh`：初始化本地客户端连接（交互式）
+- `install-agent.sh`：在 Linux 主机部署 `nova`，启动 `nova agent` 并注册 systemd 服务
+- `uninstall-agent.sh`：卸载 `nova` 服务与二进制
+- `install-cli.sh`：安装 `nova` CLI（下载匹配平台二进制到本机）
 
 ## 发布时流程（推荐）
 
-1. 客户端侧一键初始化（自动下载并安装 `nova`）：
-   - `NOVA_GITHUB_REPO=你的组织/仓库名 curl -fsSL https://raw.githubusercontent.com/<你的组织>/<仓库名>/main/scripts/init-client.sh | bash`
-   - 按提示填写服务端访问地址和 token（默认 `~/.nova/client.env`）
-2. 本地构建并上传 `nova-agent` Linux amd64 二进制：
-   - `GOOS=linux GOARCH=amd64 go build -o dist/nova-agent ./cmd/nova-agent`
-3. 在服务端执行 `install-agent.sh`
-4. 重复 `curl ... | bash` 流程可直接用于新机器初始化（支持交互式）
+1. 本地安装（curl）：
+   - `curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash`
+2. 在项目目录执行 `nova`：
+   - 首次运行会检测是否缺少本地连接配置，若缺失会进入交互式初始化
+3. 本地构建并上传 `nova` Linux amd64 二进制：
+   - `GOOS=linux GOARCH=amd64 go build -o dist/nova ./cmd/nova`
+4. 在服务端执行 `install-agent.sh`（会安装并启动 `nova agent`）

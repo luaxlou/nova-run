@@ -3,73 +3,46 @@ package configmanager
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 
-	"github.com/luaxlou/glow/starter/glowsqlite"
+	"github.com/luaxlou/glow-ops/internal/storage"
 )
 
 var (
-	once  sync.Once
 	mu    sync.Mutex
 	cache map[string]any
 )
 
-const schema = `
-	CREATE TABLE IF NOT EXISTS app_configs (
-		app_name TEXT PRIMARY KEY,
-		config_json TEXT NOT NULL,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);`
-
-func init() {
-	glowsqlite.RegisterSchema(schema)
-}
-
 func Init() {
-	once.Do(func() {
-		cache = make(map[string]any)
-	})
+	cache = make(map[string]any)
 }
 
 // EnsureInitialized ensures that the service is initialized and cache is loaded.
 func EnsureInitialized() error {
-	Init()
-
 	mu.Lock()
 	defer mu.Unlock()
+
+	if cache == nil {
+		cache = make(map[string]any)
+	}
 
 	if len(cache) > 0 {
 		return nil
 	}
-
 	return loadCache()
 }
 
 func loadCache() error {
-	db, err := glowsqlite.DB()
+	all, err := storage.GetAllAppConfigs()
 	if err != nil {
 		return err
 	}
-	rows, err := db.Query("SELECT app_name, config_json FROM app_configs")
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
 
-	for rows.Next() {
-		var appName, configJSON string
-		if err := rows.Scan(&appName, &configJSON); err != nil {
-			return err
-		}
-
-		var config map[string]any
-		if err := json.Unmarshal([]byte(configJSON), &config); err != nil {
-			log.Printf("Error unmarshaling config for app %s: %v", appName, err)
-			continue
-		}
+	cache = make(map[string]any, len(all))
+	for appName, config := range all {
 		cache[appName] = config
 	}
+
 	return nil
 }
 
@@ -128,25 +101,7 @@ func Set(appName string, newConfig map[string]any, merge bool) error {
 		finalConfig = newConfig
 	}
 
-	configJSON, err := json.Marshal(finalConfig)
-	if err != nil {
-		return err
-	}
-
-	db, err := glowsqlite.DB()
-	if err != nil {
-		return err
-	}
-
-	// Upsert into DB
-	query := `
-	INSERT INTO app_configs (app_name, config_json, updated_at) 
-	VALUES (?, ?, CURRENT_TIMESTAMP)
-	ON CONFLICT(app_name) DO UPDATE SET 
-		config_json = excluded.config_json,
-		updated_at = CURRENT_TIMESTAMP;
-	`
-	if _, err := db.Exec(query, appName, string(configJSON)); err != nil {
+	if err := storage.SetAppConfig(appName, finalConfig); err != nil {
 		return err
 	}
 

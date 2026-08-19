@@ -9,13 +9,22 @@ import (
 	"github.com/luaxlou/glow-ops/internal/configmanager"
 	"github.com/luaxlou/glow-ops/internal/statemanager"
 	"github.com/luaxlou/glow-ops/pkg/api"
-	"github.com/luaxlou/glow/starter/glowsqlite"
+	"github.com/luaxlou/glow-ops/internal/storage"
 )
+
+func initTestState(t *testing.T, tmpDir string) {
+	t.Helper()
+	statePath := filepath.Join(tmpDir, "nova-state.json")
+	t.Cleanup(func() { _ = os.Remove(statePath) })
+	storage.Init(statePath)
+	storage.Reload()
+}
 
 func TestAppManager_StartApp(t *testing.T) {
 	// Setup temp dir
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("nova.db") })
+	initTestState(t, tmpDir)
+	configmanager.Init()
 
 	// Initialize Config
 	if err := configmanager.EnsureInitialized(); err != nil {
@@ -111,10 +120,8 @@ done
 
 func TestAppManager_StartApp_FallbackToDeployedBinaryWhenCommandMissing(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("nova.db") })
-
-	// Reset DB connection to ensure fresh state
-	glowsqlite.Reload()
+	initTestState(t, tmpDir)
+	configmanager.Init()
 
 	if err := configmanager.EnsureInitialized(); err != nil {
 		t.Fatalf("Failed to init config manager: %v", err)
@@ -185,9 +192,8 @@ done
 
 func TestAppManager_StopApp_KeepIngressDoesNotRemoveConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	t.Cleanup(func() { _ = os.Remove("nova.db") })
-
-	glowsqlite.Reload()
+	initTestState(t, tmpDir)
+	configmanager.Init()
 
 	if err := configmanager.EnsureInitialized(); err != nil {
 		t.Fatalf("Failed to init config manager: %v", err)

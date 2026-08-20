@@ -22,6 +22,22 @@ type Client struct {
 	Token    string
 }
 
+type DeployResult struct {
+	App     string `json:"app"`
+	Version string `json:"version"`
+	Skipped bool   `json:"skipped"`
+	Message string `json:"message"`
+}
+
+type AppStatus struct {
+	State    string `json:"state"`
+	SubState string `json:"subState"`
+	PID      string `json:"pid"`
+	Started  string `json:"started"`
+	ExitCode string `json:"exitCode"`
+	Version  string `json:"version"`
+}
+
 func NewClient() *Client {
 	endpoint := os.Getenv("NOVA_ENDPOINT")
 	if endpoint == "" {
@@ -143,76 +159,83 @@ func (c *Client) parseResponse(payload []byte, out any) error {
 	return nil
 }
 
-func (c *Client) deployArtifact(ctx context.Context, name string, artifactReader io.Reader) error {
+func (c *Client) deployArtifact(ctx context.Context, name string, artifactReader io.Reader, version string) (DeployResult, error) {
 	if name == "" {
-		return fmt.Errorf("app name required")
+		return DeployResult{}, fmt.Errorf("app name required")
 	}
 	if artifactReader == nil {
-		return fmt.Errorf("artifact stream required")
+		return DeployResult{}, fmt.Errorf("artifact stream required")
+	}
+	if strings.TrimSpace(version) == "" {
+		return DeployResult{}, fmt.Errorf("version required")
 	}
 
 	var body bytes.Buffer
 	mw := multipart.NewWriter(&body)
+	if err := mw.WriteField("version", strings.TrimSpace(version)); err != nil {
+		return DeployResult{}, fmt.Errorf("write version field: %w", err)
+	}
 	part, err := mw.CreateFormFile("artifact", "artifact.tar.gz")
 	if err != nil {
-		return fmt.Errorf("create multipart form: %w", err)
+		return DeployResult{}, fmt.Errorf("create multipart form: %w", err)
 	}
 	if _, err := io.Copy(part, artifactReader); err != nil {
-		return fmt.Errorf("read artifact: %w", err)
+		return DeployResult{}, fmt.Errorf("read artifact: %w", err)
 	}
 	if err := mw.Close(); err != nil {
-		return fmt.Errorf("close multipart form: %w", err)
+		return DeployResult{}, fmt.Errorf("close multipart form: %w", err)
 	}
 
 	payload, err := c.doRequest(ctx, http.MethodPut, "/v1/apps/"+url.PathEscape(name), &body, mw.FormDataContentType())
 	if err != nil {
-		return err
+		return DeployResult{}, err
 	}
-	if err := c.parseResponse(payload, nil); err != nil {
-		return err
+	var result DeployResult
+	if err := c.parseResponse(payload, &result); err != nil {
+		return DeployResult{}, err
 	}
-	return nil
+	return result, nil
 }
 
-func (c *Client) Deploy(ctx context.Context, name, artifactPath string) error {
+func (c *Client) Deploy(ctx context.Context, name, artifactPath, version string) (DeployResult, error) {
 	if artifactPath == "" {
-		return fmt.Errorf("artifact path required")
+		return DeployResult{}, fmt.Errorf("artifact path required")
 	}
 	info, err := os.Stat(artifactPath)
 	if err != nil {
-		return fmt.Errorf("artifact path invalid: %w", err)
+		return DeployResult{}, fmt.Errorf("artifact path invalid: %w", err)
 	}
 	if info.IsDir() {
 		manifest, ok, err := artifact.LoadManifest(artifactPath)
 		if err != nil {
-			return err
+			return DeployResult{}, err
 		}
 		if ok && strings.TrimSpace(manifest.Process.Command) != "" {
 			runPath := filepath.Join(artifactPath, "run")
 			if _, err := os.Stat(runPath); err != nil {
-				return fmt.Errorf("service artifact must contain run: %w", err)
+				return DeployResult{}, fmt.Errorf("service artifact must contain run: %w", err)
 			}
 		}
 	}
 	tmp, err := os.CreateTemp("", "nova-artifact-*.tar.gz")
 	if err != nil {
-		return fmt.Errorf("create temporary archive: %w", err)
+		return DeployResult{}, fmt.Errorf("create temporary archive: %w", err)
 	}
 	tmpPath := tmp.Name()
 	_ = tmp.Close()
 	defer os.Remove(tmpPath)
 
 	if err := artifact.PackPath(artifactPath, tmpPath); err != nil {
-		return fmt.Errorf("pack artifact: %w", err)
+		return DeployResult{}, fmt.Errorf("pack artifact: %w", err)
 	}
 
 	stream, err := os.Open(tmpPath)
 	if err != nil {
-		return fmt.Errorf("open artifact archive: %w", err)
+		return DeployResult{}, fmt.Errorf("open artifact archive: %w", err)
 	}
 	defer stream.Close()
 
-	return c.deployArtifact(ctx, name, stream)
+	return c.deployArtifact(ctx, name, stream, version)
 }
 
 func (c *Client) Start(ctx context.Context, name string) error {
@@ -249,28 +272,34 @@ func (c *Client) Restart(ctx context.Context, name string) error {
 }
 
 func (c *Client) Status(ctx context.Context, name string) (string, error) {
-	if name == "" {
-		return "", fmt.Errorf("app name required")
-	}
-	payload, err := c.doRequest(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(name)+"/status", nil, "")
+	status, err := c.AppStatus(ctx, name)
 	if err != nil {
 		return "", err
 	}
-
-	var status struct {
-		State    string `json:"state"`
-		SubState string `json:"subState"`
-		PID      string `json:"pid"`
-		Started  string `json:"started"`
-		ExitCode string `json:"exitCode"`
-	}
-	if err := c.parseResponse(payload, &status); err != nil {
-		return "", err
+	version := status.Version
+	if version == "" {
+		version = "unknown"
 	}
 	return fmt.Sprintf(
-		"app=%s state=%s sub=%s pid=%s started=%s exit=%s",
-		name, status.State, status.SubState, status.PID, status.Started, status.ExitCode,
+		"app=%s state=%s sub=%s pid=%s started=%s exit=%s version=%s",
+		name, status.State, status.SubState, status.PID, status.Started, status.ExitCode, version,
 	), nil
+}
+
+func (c *Client) AppStatus(ctx context.Context, name string) (AppStatus, error) {
+	if name == "" {
+		return AppStatus{}, fmt.Errorf("app name required")
+	}
+	payload, err := c.doRequest(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(name)+"/status", nil, "")
+	if err != nil {
+		return AppStatus{}, err
+	}
+
+	var status AppStatus
+	if err := c.parseResponse(payload, &status); err != nil {
+		return AppStatus{}, err
+	}
+	return status, nil
 }
 
 func (c *Client) Logs(ctx context.Context, name string, follow bool) ([]string, error) {

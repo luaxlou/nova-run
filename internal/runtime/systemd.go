@@ -9,11 +9,12 @@ import (
 )
 
 type Status struct {
-	State     string `json:"state"`
-	SubState  string `json:"subState"`
-	PID       string `json:"pid"`
-	Started   string `json:"started"`
-	ExitCode  string `json:"exitCode"`
+	State    string `json:"state"`
+	SubState string `json:"subState"`
+	PID      string `json:"pid"`
+	Started  string `json:"started"`
+	ExitCode string `json:"exitCode"`
+	Version  string `json:"version,omitempty"`
 }
 
 type Controller struct{}

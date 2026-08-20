@@ -145,6 +145,12 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
+			if version, ok, err := deploy.CurrentVersion(s.AppRoot, name); err != nil {
+				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+				return
+			} else if ok {
+				status.Version = version
+			}
 			api.RenderJSON(w, api.Response{Success: true, Data: status})
 		case "logs":
 			query := r.URL.Query()
@@ -269,16 +275,51 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name strin
 		return
 	}
 
+	version := strings.TrimSpace(r.FormValue("version"))
+	if version == "" {
+		api.RenderJSONError(w, http.StatusBadRequest, "version field is required")
+		return
+	}
+
 	appDir := filepath.Join(s.AppRoot, name)
 	if err := os.MkdirAll(s.AppRoot, 0o755); err != nil {
 		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if current, ok, err := deploy.CurrentVersion(s.AppRoot, name); err != nil {
+		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	} else if ok && current == version {
+		api.RenderJSON(w, api.Response{
+			Success: true,
+			Message: fmt.Sprintf("app %s already at version %s", name, version),
+			Data: map[string]any{
+				"app":     name,
+				"version": version,
+				"skipped": true,
+				"message": "already latest",
+			},
+		})
 		return
 	}
 	if err := deploy.ReplaceArtifact(appDir, tmp.Name()); err != nil {
 		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	api.RenderJSON(w, api.Response{Success: true, Message: fmt.Sprintf("app %s deployed", name)})
+	if err := deploy.SaveMetadata(appDir, deploy.Metadata{Version: version}); err != nil {
+		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	api.RenderJSON(w, api.Response{
+		Success: true,
+		Message: fmt.Sprintf("app %s deployed version %s", name, version),
+		Data: map[string]any{
+			"app":     name,
+			"version": version,
+			"skipped": false,
+			"message": "deployed",
+		},
+	})
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, name string) {

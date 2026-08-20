@@ -245,6 +245,18 @@ func deployTarget(ctx context.Context, cli *client.Client, target project.Target
 	if len(target.Build.Commands) == 0 {
 		return fmt.Errorf("no build commands configured for %s", targetLabel(target))
 	}
+	version, err := gitDeploymentVersion(".")
+	if err != nil {
+		return err
+	}
+	status, err := cli.AppStatus(ctx, target.App)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(status.Version) == version {
+		fmt.Printf("already latest app=%s version=%s\n", target.App, version)
+		return nil
+	}
 	if err := runShellCommands(ctx, target.Build.Commands); err != nil {
 		return err
 	}
@@ -253,12 +265,40 @@ func deployTarget(ctx context.Context, cli *client.Client, target project.Target
 		return err
 	}
 	defer cleanup()
-	if err := cli.Deploy(ctx, target.App, artifactPath); err != nil {
+	result, err := cli.Deploy(ctx, target.App, artifactPath, version)
+	if err != nil {
 		return err
 	}
-	fmt.Println("deployed")
+	if result.Skipped {
+		fmt.Printf("already latest app=%s version=%s\n", target.App, result.Version)
+		return nil
+	}
+	fmt.Printf("deployed app=%s version=%s\n", target.App, result.Version)
 	printArtifactSummary(artifactPath)
 	return nil
+}
+
+func gitDeploymentVersion(dir string) (string, error) {
+	status := exec.Command("git", "status", "--porcelain")
+	status.Dir = dir
+	out, err := status.Output()
+	if err != nil {
+		return "", fmt.Errorf("git status failed: %w", err)
+	}
+	if strings.TrimSpace(string(out)) != "" {
+		return "", fmt.Errorf("git worktree is not clean; commit or remove local changes before deploy")
+	}
+	rev := exec.Command("git", "rev-parse", "--short=12", "HEAD")
+	rev.Dir = dir
+	version, err := rev.Output()
+	if err != nil {
+		return "", fmt.Errorf("git version failed: %w", err)
+	}
+	versionText := strings.TrimSpace(string(version))
+	if versionText == "" {
+		return "", fmt.Errorf("git version is empty")
+	}
+	return versionText, nil
 }
 
 func prepareDeployArtifact(artifactPath string, target project.Target) (string, func(), error) {

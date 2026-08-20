@@ -139,12 +139,13 @@ Nova Run 项目地址：
    `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
 6. 如果 `<artifact-path>` 还不存在，请补齐最小必要的构建命令，让构建结果稳定输出到该路径。
 7. 如果应用需要 Nova 接管进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
-8. 完成代码修改后，执行：
+8. 完成代码修改并提交 Git 后，执行：
    `nova deploy`
    不指定目标时，Nova 默认使用 `apps` 下声明的第一个应用。多子应用也可以显式执行：
    `nova deploy <app-selector>`
    或部署全部：
    `nova deploy all`
+   Nova 会拒绝未提交的本地工作区，把当前 Git HEAD 短 SHA 作为部署版本提交给 Agent；如果目标应用已经是同一版本，命令会直接返回 `already latest`，不再构建和上传制品。
 9. 发布后执行：
    `nova status`
    或：
@@ -236,6 +237,8 @@ nova logs sbom-platform-backend -f
 ```
 
 上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品路径；这个路径可以是目录，也可以是单个文件。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
+
+`nova deploy` 只接受干净的 Git 工作区。每次成功部署都会把当前 Git HEAD 短 SHA 写入服务端部署元数据；`nova status` 会展示该 `version`。当本地版本与服务端已部署版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
 ## 制品清单
 

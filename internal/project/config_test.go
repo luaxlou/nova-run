@@ -12,8 +12,7 @@ func TestLoadProjectConfig(t *testing.T) {
 build:
   commands:
     - npm run build
-artifact:
-  dir: dist/nova
+artifacts: dist/nova
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -28,30 +27,30 @@ artifact:
 	if cfg.App != "demo" {
 		t.Fatalf("app = %q", cfg.App)
 	}
-	if cfg.Artifact.Dir != "dist/nova" {
-		t.Fatalf("artifact dir = %q", cfg.Artifact.Dir)
+	if cfg.Artifacts != "dist/nova" {
+		t.Fatalf("artifacts = %q", cfg.Artifacts)
 	}
 }
 
-func TestValidateRequiresAppAndArtifactDir(t *testing.T) {
+func TestValidateRequiresAppAndArtifacts(t *testing.T) {
 	if err := Validate(Config{}); err == nil {
 		t.Fatal("expected missing app error")
 	}
 	if err := Validate(Config{App: "demo"}); err == nil {
-		t.Fatal("expected missing artifact dir error")
+		t.Fatal("expected missing artifacts error")
 	}
 }
 
 func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	cfg := Config{
-		App:      "demo",
-		Build:    BuildConfig{Commands: []string{"npm run build"}},
-		Artifact: ArtifactConfig{Dir: "dist/default"},
+		App:       "demo",
+		Build:     BuildConfig{Commands: []string{"npm run build"}},
+		Artifacts: "dist/default",
 		Apps: map[string]App{
 			"backend": {
-				App:      "demo-backend",
-				Build:    BuildConfig{Commands: []string{"go build ./cmd/api"}},
-				Artifact: ArtifactConfig{Dir: "backend/dist/api"},
+				App:       "demo-backend",
+				Build:     BuildConfig{Commands: []string{"go build ./cmd/api"}},
+				Artifacts: "backend/dist/api",
 			},
 		},
 	}
@@ -63,8 +62,8 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	if target.App != "demo-backend" {
 		t.Fatalf("app = %q", target.App)
 	}
-	if target.Artifact.Dir != "backend/dist/api" {
-		t.Fatalf("artifact = %q", target.Artifact.Dir)
+	if target.Artifacts != "backend/dist/api" {
+		t.Fatalf("artifacts = %q", target.Artifacts)
 	}
 }
 
@@ -72,8 +71,8 @@ func TestResolveSubAppDefaultsAppNameToSelector(t *testing.T) {
 	cfg := Config{
 		Apps: map[string]App{
 			"sbom-platform": {
-				Build:    BuildConfig{Commands: []string{"scripts/build.sh"}},
-				Artifact: ArtifactConfig{Dir: "backend/dist/sbom-platform"},
+				Build:     BuildConfig{Commands: []string{"scripts/build.sh"}},
+				Artifacts: "backend/dist/sbom-platform",
 			},
 		},
 	}

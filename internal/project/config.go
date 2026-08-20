@@ -12,24 +12,20 @@ import (
 const ConfigFile = "nova.yaml"
 
 type Config struct {
-	App      string         `json:"app,omitempty" yaml:"app,omitempty"`
-	Build    BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
-	Artifact ArtifactConfig `json:"artifact,omitempty" yaml:"artifact,omitempty"`
-	Apps     map[string]App `json:"apps,omitempty" yaml:"apps,omitempty"`
+	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
+	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
+	Artifacts string         `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
+	Apps      map[string]App `json:"apps,omitempty" yaml:"apps,omitempty"`
 }
 
 type App struct {
-	App      string         `json:"app,omitempty" yaml:"app,omitempty"`
-	Build    BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
-	Artifact ArtifactConfig `json:"artifact,omitempty" yaml:"artifact,omitempty"`
+	App       string      `json:"app,omitempty" yaml:"app,omitempty"`
+	Build     BuildConfig `json:"build,omitempty" yaml:"build,omitempty"`
+	Artifacts string      `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 }
 
 type BuildConfig struct {
 	Commands []string `json:"commands,omitempty" yaml:"commands,omitempty"`
-}
-
-type ArtifactConfig struct {
-	Dir string `json:"dir,omitempty" yaml:"dir,omitempty"`
 }
 
 func Load(dir string) (Config, string, error) {
@@ -50,7 +46,7 @@ func Load(dir string) (Config, string, error) {
 
 func Validate(cfg Config) error {
 	hasDefault := strings.TrimSpace(cfg.App) != "" ||
-		strings.TrimSpace(cfg.Artifact.Dir) != "" ||
+		strings.TrimSpace(cfg.Artifacts) != "" ||
 		len(cfg.Build.Commands) > 0
 	if hasDefault {
 		if _, err := Resolve(cfg, ""); err != nil {
@@ -69,25 +65,25 @@ func Validate(cfg Config) error {
 }
 
 type Target struct {
-	Name     string
-	App      string
-	Build    BuildConfig
-	Artifact ArtifactConfig
+	Name      string
+	App       string
+	Build     BuildConfig
+	Artifacts string
 }
 
 func Resolve(cfg Config, selector string) (Target, error) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
 		hasDefault := strings.TrimSpace(cfg.App) != "" ||
-			strings.TrimSpace(cfg.Artifact.Dir) != "" ||
+			strings.TrimSpace(cfg.Artifacts) != "" ||
 			len(cfg.Build.Commands) > 0
 		if !hasDefault {
 			return Target{}, fmt.Errorf("%s default app is not configured; choose one of apps", ConfigFile)
 		}
 		return resolveApp(cfg, "", App{
-			App:      cfg.App,
-			Build:    cfg.Build,
-			Artifact: cfg.Artifact,
+			App:       cfg.App,
+			Build:     cfg.Build,
+			Artifacts: cfg.Artifacts,
 		})
 	}
 	app, ok := cfg.Apps[selector]
@@ -99,10 +95,10 @@ func Resolve(cfg Config, selector string) (Target, error) {
 
 func resolveApp(cfg Config, name string, app App) (Target, error) {
 	target := Target{
-		Name:     name,
-		App:      firstNonEmpty(app.App, cfg.App, name),
-		Build:    mergeBuild(cfg.Build, app.Build),
-		Artifact: mergeArtifact(cfg.Artifact, app.Artifact),
+		Name:      name,
+		App:       firstNonEmpty(app.App, cfg.App, name),
+		Build:     mergeBuild(cfg.Build, app.Build),
+		Artifacts: firstNonEmpty(app.Artifacts, cfg.Artifacts),
 	}
 	label := ConfigFile
 	if name != "" {
@@ -111,8 +107,8 @@ func resolveApp(cfg Config, name string, app App) (Target, error) {
 	if strings.TrimSpace(target.App) == "" {
 		return Target{}, fmt.Errorf("%s app is required", label)
 	}
-	if strings.TrimSpace(target.Artifact.Dir) == "" {
-		return Target{}, fmt.Errorf("%s artifact.dir is required", label)
+	if strings.TrimSpace(target.Artifacts) == "" {
+		return Target{}, fmt.Errorf("%s artifacts is required", label)
 	}
 	if err := validateCommands(label, "build.commands", target.Build.Commands); err != nil {
 		return Target{}, err
@@ -134,13 +130,6 @@ func validateCommands(label, field string, commands []string) error {
 
 func mergeBuild(base, override BuildConfig) BuildConfig {
 	if len(override.Commands) > 0 {
-		return override
-	}
-	return base
-}
-
-func mergeArtifact(base, override ArtifactConfig) ArtifactConfig {
-	if strings.TrimSpace(override.Dir) != "" {
 		return override
 	}
 	return base

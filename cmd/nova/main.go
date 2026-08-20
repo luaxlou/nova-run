@@ -221,11 +221,11 @@ func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string)
 	if err := runShellCommands(ctx, target.Build.Commands); err != nil {
 		return err
 	}
-	if err := cli.Deploy(ctx, target.App, target.Artifact.Dir); err != nil {
+	if err := cli.Deploy(ctx, target.App, target.Artifacts); err != nil {
 		return err
 	}
 	fmt.Println("deployed")
-	printArtifactSummary(target.Artifact.Dir)
+	printArtifactSummary(target.Artifacts)
 	return nil
 }
 

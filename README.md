@@ -12,6 +12,12 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 安装不会初始化项目，不会写项目配置，也不会询问 Nova Agent Endpoint 或访问令牌。
 
+如果本机已经安装过 `nova`，安装脚本会优先更新当前 `PATH` 中正在使用的 `nova` 所在目录。之后也可以直接执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
+```
+
 ## 初始化项目
 
 请先在目标 Linux 服务器上安装 Nova Agent。安装完成后，脚本会输出 `nova init` 需要填写的 Nova Agent Endpoint 和访问令牌。

@@ -39,10 +39,10 @@ Usage:
   nova status [app]
   nova logs [app] [-f]
   nova list
-  nova remove <app>
+  nova remove [app]
 
 Local convenience:
-  nova rollback <app>
+  nova rollback [app]
   nova target add <name> --url <url> --token <token>
   nova target use <name>
   nova target list

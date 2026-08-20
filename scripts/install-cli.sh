@@ -30,7 +30,10 @@ else
 fi
 
 if [ -z "$INSTALL_DIR" ]; then
-  if [ -w /usr/local/bin ]; then
+  EXISTING_NOVA="$(command -v nova || true)"
+  if [ -n "$EXISTING_NOVA" ] && [ -w "$(dirname "$EXISTING_NOVA")" ]; then
+    INSTALL_DIR="$(dirname "$EXISTING_NOVA")"
+  elif [ -w /usr/local/bin ]; then
     INSTALL_DIR="/usr/local/bin"
   else
     INSTALL_DIR="${HOME}/.local/bin"

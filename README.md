@@ -73,10 +73,10 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 - 先识别项目的构建方式和产物目录。
 - 如果项目还没有清晰的构建产物，请补齐最小必要的构建脚本或说明。
 - 每次完成代码修改后，先运行项目测试和构建。
-- 构建成功后，用 `nova deploy` 读取项目 `nova.yaml` 并发布产物。
+- 用 `nova build`、`nova test`、`nova deploy` 读取项目 `nova.yaml` 完成构建、测试和发布。
 - 发布后用 `nova status <app>` 确认运行状态。
 - 需要排查问题时，用 `nova logs <app>` 或 `nova logs <app> -f` 查看日志。
-- 需要控制进程时，用 `nova start <app>`、`nova stop <app>`、`nova restart <app>`。
+- 需要控制进程时，用 `nova start [app]`、`nova stop [app]`、`nova restart [app]`，其中 `[app]` 是 `nova.yaml` 中的可选子应用选择器。
 - 需要移除应用时，用 `nova remove <app>`。
 
 请遵守这些边界：
@@ -91,19 +91,22 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 ## 管理项目
 
 ```bash
+nova build [app]
+nova test [app]
 nova deploy
-nova start <app>
-nova stop <app>
-nova restart <app>
-nova status <app>
-nova logs <app> [-f]
+nova deploy [app]
+nova start [app]
+nova stop [app]
+nova restart [app]
+nova status [app]
+nova logs [app] [-f]
 nova list
-nova remove <app>
+nova remove [app]
 ```
 
 ## 项目部署配置
 
-项目根目录使用 `nova.yaml` 声明部署方式。`nova deploy` 不接收应用名和制品目录参数，而是读取这份配置，先执行构建命令，再发布指定制品目录。
+项目根目录使用 `nova.yaml` 声明部署方式。Nova 命令默认服务当前目录，不接收临时应用名或制品目录参数，而是读取这份配置。
 
 ```yaml
 app: sbom-platform
@@ -111,8 +114,39 @@ build:
   commands:
     - npm run build
     - scripts/build-nova-artifact.sh
+test:
+  commands:
+    - npm run test:real-ui
 artifact:
   dir: .nova/artifact
+```
+
+多子应用项目可以在 `apps` 下声明可选目标：
+
+```yaml
+apps:
+  backend:
+    app: sbom-platform-backend
+    build:
+      commands:
+        - go build -o .nova/backend/app ./cmd/api
+    artifact:
+      dir: .nova/backend
+  worker:
+    app: sbom-platform-worker
+    build:
+      commands:
+        - go build -o .nova/worker/app ./cmd/worker
+    artifact:
+      dir: .nova/worker
+```
+
+之后使用：
+
+```bash
+nova deploy backend
+nova restart worker
+nova logs backend -f
 ```
 
 ## 可选制品清单

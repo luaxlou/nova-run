@@ -41,3 +41,33 @@ func TestValidateRequiresAppAndArtifactDir(t *testing.T) {
 		t.Fatal("expected missing artifact dir error")
 	}
 }
+
+func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
+	cfg := Config{
+		App:      "demo",
+		Build:    BuildConfig{Commands: []string{"npm run build"}},
+		Test:     BuildConfig{Commands: []string{"npm test"}},
+		Artifact: ArtifactConfig{Dir: ".nova/default"},
+		Apps: map[string]App{
+			"backend": {
+				App:      "demo-backend",
+				Build:    BuildConfig{Commands: []string{"go build ./cmd/api"}},
+				Artifact: ArtifactConfig{Dir: ".nova/backend"},
+			},
+		},
+	}
+
+	target, err := Resolve(cfg, "backend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.App != "demo-backend" {
+		t.Fatalf("app = %q", target.App)
+	}
+	if target.Artifact.Dir != ".nova/backend" {
+		t.Fatalf("artifact = %q", target.Artifact.Dir)
+	}
+	if target.Test.Commands[0] != "npm test" {
+		t.Fatalf("test commands = %#v", target.Test.Commands)
+	}
+}

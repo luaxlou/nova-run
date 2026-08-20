@@ -37,16 +37,18 @@ Nova 对该清单只做三件事：
 Nova 不区分前端和后端，不描述路由，不创建、不修改、不 reload Caddy/Nginx，也不管理域名、TLS、安全组或云厂商解析记录。
 
 ## API/CLI 对应关系
-- `PUT /v1/apps/{name}` -> `nova deploy` 根据项目 `nova.yaml` 构建并发布
-- `POST /v1/apps/{name}/start` -> `nova start`
-- `POST /v1/apps/{name}/stop` -> `nova stop`
-- `POST /v1/apps/{name}/restart` -> `nova restart`
-- `GET /v1/apps/{name}/status` -> `nova status`
-- `GET /v1/apps/{name}/logs` -> `nova logs`
+- `PUT /v1/apps/{name}` -> `nova deploy [app]` 根据当前目录 `nova.yaml` 构建并发布
+- `POST /v1/apps/{name}/start` -> `nova start [app]`
+- `POST /v1/apps/{name}/stop` -> `nova stop [app]`
+- `POST /v1/apps/{name}/restart` -> `nova restart [app]`
+- `GET /v1/apps/{name}/status` -> `nova status [app]`
+- `GET /v1/apps/{name}/logs` -> `nova logs [app]`
   - `?lines=<n>`（回放，默认 100）
-  - `?follow=true`（流式，`nova logs <name> -f`）
-- `DELETE /v1/apps/{name}` -> `nova remove`
+  - `?follow=true`（流式，`nova logs [app] -f`）
+- `DELETE /v1/apps/{name}` -> `nova remove [app]`
 - `GET /v1/apps` -> `nova list`
+
+CLI 的 `[app]` 不是远端应用名，而是当前项目 `nova.yaml` 中 `apps` 下的子应用选择器。省略时使用顶层默认应用。
 
 ## 变更记录（里程碑）
 

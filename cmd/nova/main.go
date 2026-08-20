@@ -32,12 +32,14 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova deploy         # 读取当前目录 nova.yaml，执行构建并发布
-  nova start <app>
-  nova stop <app>
-  nova restart <app>
-  nova status <app>
-  nova logs <app> [-f]
+  nova build [app]    # 读取当前目录 nova.yaml，执行构建命令
+  nova test [app]     # 读取当前目录 nova.yaml，执行测试命令
+  nova deploy [app]   # 读取当前目录 nova.yaml，执行构建并发布
+  nova start [app]
+  nova stop [app]
+  nova restart [app]
+  nova status [app]
+  nova logs [app] [-f]
   nova list
   nova remove <app>
 
@@ -88,54 +90,79 @@ func main() {
 			fmt.Printf("agent failed: %v\n", err)
 			os.Exit(1)
 		}
-	case "deploy":
-		if len(rest) != 0 {
-			fmt.Println("ERROR: nova deploy now reads nova.yaml and does not accept positional app/artifact arguments")
+	case "build":
+		if err := runConfiguredCommands(ctx, rest, commandKindBuild); err != nil {
+			fmt.Printf("build failed: %v\n", err)
 			os.Exit(1)
 		}
-		if err := runConfiguredDeploy(ctx, cli); err != nil {
+	case "test":
+		if err := runConfiguredCommands(ctx, rest, commandKindTest); err != nil {
+			fmt.Printf("test failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "deploy":
+		if err := runConfiguredDeploy(ctx, cli, rest); err != nil {
 			fmt.Printf("deploy failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "start":
-		ensureName(rest)
-		if err := cli.Start(ctx, rest[0]); err != nil {
+		target, err := loadTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("start failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := cli.Start(ctx, target.App); err != nil {
 			fmt.Printf("start failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("start command sent")
 	case "stop":
-		ensureName(rest)
-		if err := cli.Stop(ctx, rest[0]); err != nil {
+		target, err := loadTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("stop failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := cli.Stop(ctx, target.App); err != nil {
 			fmt.Printf("stop failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("stop command sent")
 	case "restart":
-		ensureName(rest)
-		if err := cli.Restart(ctx, rest[0]); err != nil {
+		target, err := loadTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("restart failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := cli.Restart(ctx, target.App); err != nil {
 			fmt.Printf("restart failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("restart command sent")
 	case "status":
-		ensureName(rest)
-		status, err := cli.Status(ctx, rest[0])
+		target, err := loadTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("status failed: %v\n", err)
+			os.Exit(1)
+		}
+		status, err := cli.Status(ctx, target.App)
 		if err != nil {
 			fmt.Printf("status failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println(status)
 	case "logs":
-		ensureName(rest)
-		follow := len(rest) > 1 && strings.EqualFold(rest[1], "-f")
+		target, follow, err := loadLogTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("logs failed: %v\n", err)
+			os.Exit(1)
+		}
 		if follow {
-			if err := cli.LogsStream(ctx, rest[0], os.Stdout); err != nil {
+			if err := cli.LogsStream(ctx, target.App, os.Stdout); err != nil {
 				fmt.Printf("logs failed: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
-			stream, err := cli.Logs(ctx, rest[0], follow)
+			stream, err := cli.Logs(ctx, target.App, follow)
 			if err != nil {
 				fmt.Printf("logs failed: %v\n", err)
 				os.Exit(1)
@@ -154,14 +181,17 @@ func main() {
 			fmt.Println(item)
 		}
 	case "remove":
-		ensureName(rest)
-		if err := cli.Remove(ctx, rest[0]); err != nil {
+		target, err := loadTargetFromArgs(rest)
+		if err != nil {
+			fmt.Printf("remove failed: %v\n", err)
+			os.Exit(1)
+		}
+		if err := cli.Remove(ctx, target.App); err != nil {
 			fmt.Printf("remove failed: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("removed")
 	case "rollback":
-		ensureName(rest)
 		fmt.Println("rollback is a local operation; not implemented in this milestone")
 	case "target":
 		if len(rest) == 0 {
@@ -192,28 +222,115 @@ func main() {
 	}
 }
 
-func runConfiguredDeploy(ctx context.Context, cli *client.Client) error {
-	cfg, path, err := project.Load(".")
+type commandKind string
+
+const (
+	commandKindBuild commandKind = "build"
+	commandKindTest  commandKind = "test"
+)
+
+func runConfiguredCommands(ctx context.Context, args []string, kind commandKind) error {
+	target, err := loadTargetFromArgs(args)
 	if err != nil {
 		return err
 	}
+	commands := target.Build.Commands
+	if kind == commandKindTest {
+		commands = target.Test.Commands
+	}
+	if len(commands) == 0 {
+		return fmt.Errorf("no %s commands configured for %s", kind, targetLabel(target))
+	}
+	return runShellCommands(ctx, commands)
+}
+
+func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string) error {
+	target, err := loadTargetFromArgs(args)
+	if err != nil {
+		return err
+	}
+	if len(target.Build.Commands) > 0 {
+		if err := runShellCommands(ctx, target.Build.Commands); err != nil {
+			return err
+		}
+	}
+	if err := cli.Deploy(ctx, target.App, target.Artifact.Dir); err != nil {
+		return err
+	}
+	fmt.Println("deployed")
+	printArtifactSummary(target.Artifact.Dir)
+	return nil
+}
+
+func loadTargetFromArgs(args []string) (project.Target, error) {
+	if len(args) > 1 {
+		return project.Target{}, fmt.Errorf("expected zero or one configured app selector")
+	}
+	selector := ""
+	if len(args) == 1 {
+		selector = args[0]
+	}
+	cfg, path, err := project.Load(".")
+	if err != nil {
+		return project.Target{}, err
+	}
 	fmt.Printf("project config: %s\n", path)
-	for _, command := range cfg.Build.Commands {
+	target, err := project.Resolve(cfg, selector)
+	if err != nil {
+		return project.Target{}, err
+	}
+	if selector != "" {
+		fmt.Printf("project app: %s\n", selector)
+	}
+	return target, nil
+}
+
+func loadLogTargetFromArgs(args []string) (project.Target, bool, error) {
+	follow := false
+	selector := ""
+	for _, arg := range args {
+		if arg == "-f" {
+			follow = true
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			return project.Target{}, false, fmt.Errorf("unknown logs argument: %s", arg)
+		}
+		if selector != "" {
+			return project.Target{}, false, fmt.Errorf("expected at most one configured app selector")
+		}
+		selector = arg
+	}
+	target, err := loadTargetFromArgs(optionalArg(selector))
+	return target, follow, err
+}
+
+func optionalArg(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return []string{value}
+}
+
+func runShellCommands(ctx context.Context, commands []string) error {
+	for _, command := range commands {
 		fmt.Printf("$ %s\n", command)
 		cmd := exec.CommandContext(ctx, "sh", "-lc", command)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		cmd.Stdin = os.Stdin
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("build command failed: %w", err)
+			return fmt.Errorf("command failed: %w", err)
 		}
 	}
-	if err := cli.Deploy(ctx, cfg.App, cfg.Artifact.Dir); err != nil {
-		return err
-	}
-	fmt.Println("deployed")
-	printArtifactSummary(cfg.Artifact.Dir)
 	return nil
+}
+
+func targetLabel(target project.Target) string {
+	if target.Name != "" {
+		return target.Name
+	}
+	return target.App
 }
 
 func printArtifactSummary(artifactDir string) {
@@ -277,7 +394,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "init" || cmd == "target" {
+	if cmd == "agent" || cmd == "init" || cmd == "target" || cmd == "build" || cmd == "test" {
 		return nil
 	}
 	if runtimeConfigReady() {

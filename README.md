@@ -111,14 +111,13 @@ Nova Run 项目地址：
 
 请把 Nova Run 当作这个项目的运行生命周期入口：
 1. 先运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
-2. 识别项目的测试命令、构建命令、运行入口和要发布的制品目录。
+2. 识别项目的构建命令、运行入口和要发布的制品目录。
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
    ```yaml
    app: <app-name>
    build:
      commands:
-       - <test-command>
        - <build-command>
    artifact:
      dir: <artifact-dir>
@@ -130,7 +129,6 @@ Nova Run 项目地址：
        app: <remote-app-name>
        build:
          commands:
-           - <test-command>
            - <build-command>
        artifact:
          dir: <artifact-dir>

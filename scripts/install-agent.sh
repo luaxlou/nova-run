@@ -8,6 +8,7 @@ SERVICE_NAME="${NOVA_SERVICE_NAME:-nova.service}"
 TOKEN_FILE="${NOVA_TOKEN_FILE:-/etc/nova/token}"
 LISTEN_ADDR="${NOVA_LISTEN_ADDR:-:32102}"
 APP_ROOT="${NOVA_APP_ROOT:-/var/lib/nova/apps}"
+AGENT_ENDPOINT="${NOVA_AGENT_ENDPOINT:-}"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Please run this installer as root, for example:"
@@ -82,3 +83,16 @@ echo "nova runtime installed"
 echo "binary: ${INSTALL_DIR}/nova"
 echo "service: ${SERVICE_NAME}"
 echo "token: ${TOKEN_FILE}"
+
+PORT="${LISTEN_ADDR##*:}"
+if [ -z "$PORT" ] || [ "$PORT" = "$LISTEN_ADDR" ]; then
+  PORT="32102"
+fi
+if [ -z "$AGENT_ENDPOINT" ]; then
+  AGENT_ENDPOINT="http://<this-server-ip-or-domain>:${PORT}"
+fi
+
+echo
+echo "Nova Agent initialized. Use these values when running 'nova init' on your project machine:"
+echo "Nova Agent Endpoint: ${AGENT_ENDPOINT}"
+echo "Access token: sudo cat ${TOKEN_FILE}"

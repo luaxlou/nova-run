@@ -23,10 +23,11 @@ import (
 )
 
 func usage() {
-	fmt.Println(`nova (Nova Run CLI)
+	fmt.Print(`nova (Nova Run CLI)
 
 Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
+  nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova deploy <app> <artifact_dir>
   nova start <app>
@@ -47,6 +48,10 @@ Local convenience:
 
 func main() {
 	args := os.Args
+	if len(args) >= 2 && isHelp(args[1]) {
+		usage()
+		return
+	}
 	if len(args) >= 2 {
 		if err := autoBootstrapRuntimeConfig(args[1]); err != nil {
 			fmt.Printf("bootstrap failed: %v\n", err)
@@ -69,6 +74,12 @@ func main() {
 	rest := args[2:]
 
 	switch cmd {
+	case "init":
+		if err := bootstrapRuntimeConfig(); err != nil {
+			fmt.Printf("init failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("initialized")
 	case "agent":
 		if err := runAgent(rest); err != nil {
 			fmt.Printf("agent failed: %v\n", err)
@@ -157,11 +168,18 @@ func main() {
 		}
 		switch rest[0] {
 		case "add":
-			fmt.Println("target add: use nova config file at ~/.nova/contexts (not implemented in this milestone)")
+			if err := runTargetAdd(rest[1:]); err != nil {
+				fmt.Printf("target add failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println("target saved")
 		case "use":
-			fmt.Println("target use: use nova config file at ~/.nova/contexts (not implemented in this milestone)")
+			fmt.Println("target use: single-target mode uses the active config file; run `nova init` or `nova target add <name> --url <url> --token <token>` to change it")
 		case "list":
-			fmt.Println("target list: use nova config file at ~/.nova/contexts (not implemented in this milestone)")
+			if err := runTargetList(); err != nil {
+				fmt.Printf("target list failed: %v\n", err)
+				os.Exit(1)
+			}
 		default:
 			usage()
 			os.Exit(1)
@@ -210,7 +228,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" {
+	if cmd == "agent" || cmd == "init" || cmd == "target" {
 		return nil
 	}
 	if runtimeConfigReady() {
@@ -218,11 +236,75 @@ func autoBootstrapRuntimeConfig(cmd string) error {
 	}
 
 	if !hasTTY() {
-		return fmt.Errorf("未检测到 Nova 运行时配置。请先配置 NOVA_ENDPOINT 和 NOVA_TOKEN 环境变量")
+		return fmt.Errorf("未检测到发布目标配置。请先配置 NOVA_ENDPOINT（Nova Agent Endpoint）和 NOVA_TOKEN（访问令牌）环境变量")
 	}
 
-	info("未检测到 Nova 运行时配置，进入交互式初始化")
+	info("未检测到发布目标配置，进入交互式初始化")
 	return bootstrapRuntimeConfig()
+}
+
+func runTargetAdd(args []string) error {
+	name := "default"
+	var endpoint, token string
+	for i := 0; i < len(args); i++ {
+		arg := strings.TrimSpace(args[i])
+		switch arg {
+		case "--url":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--url requires a value")
+			}
+			i++
+			endpoint = strings.TrimSpace(args[i])
+		case "--token":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--token requires a value")
+			}
+			i++
+			token = strings.TrimSpace(args[i])
+		default:
+			if strings.HasPrefix(arg, "-") {
+				return fmt.Errorf("unknown target add argument: %s", arg)
+			}
+			name = arg
+		}
+	}
+	if name == "" {
+		return fmt.Errorf("target name required")
+	}
+	if endpoint == "" {
+		return fmt.Errorf("--url is required")
+	}
+	if token == "" {
+		return fmt.Errorf("--token is required")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("读取用户目录失败: %w", err)
+	}
+	configPath := runtimeConfigPath(home)
+	if err := writeConfig(configPath, endpoint, token); err != nil {
+		return err
+	}
+	info(fmt.Sprintf("target %q 已写入 %s", name, configPath))
+	return nil
+}
+
+func runTargetList() error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("读取用户目录失败: %w", err)
+	}
+	configPath := runtimeConfigPath(home)
+	endpoint, _, err := readRuntimeConfigFromFile(configPath)
+	if err != nil {
+		return fmt.Errorf("读取目标配置失败: %w", err)
+	}
+	if strings.TrimSpace(endpoint) == "" {
+		return fmt.Errorf("目标配置缺少 Nova Agent Endpoint")
+	}
+	fmt.Printf("* default %s\n", endpoint)
+	return nil
 }
 
 func runtimeConfigReady() bool {
@@ -236,7 +318,7 @@ func runtimeConfigReady() bool {
 	if err != nil {
 		return false
 	}
-	endpointInFile, tokenInFile, err := readRuntimeConfigFromFile(defaultRuntimeConfigPath(home))
+	endpointInFile, tokenInFile, err := readRuntimeConfigFromFile(runtimeConfigPath(home))
 	if err != nil {
 		return false
 	}
@@ -264,30 +346,31 @@ func bootstrapRuntimeConfig() error {
 		return fmt.Errorf("读取用户目录失败: %w", err)
 	}
 
-	configPath := firstEnvOrDefault("NOVA_CLIENT_ENV", defaultRuntimeConfigPath(home))
-	if v, isSet := firstEnvWithSource("NOVA_CLIENT_ENV"); isSet {
-		configPath = v
-	}
+	configPath := runtimeConfigPath(home)
 
 	endpoint := strings.TrimSpace(firstEnv("NOVA_ENDPOINT", "NOVA_AGENT_ENDPOINT"))
 	if endpoint == "" {
-		value, err := promptInput("Nova 地址 [http://127.0.0.1:32102]: ", "http://127.0.0.1:32102")
+		info("请填写 Nova Agent Endpoint，也就是已安装 Nova Agent 的机器地址，例如 http://服务器IP:32102")
+		value, err := promptInput("Nova Agent Endpoint: ", "")
 		if err != nil {
 			return err
 		}
 		endpoint = value
 	}
+	if endpoint == "" {
+		return fmt.Errorf("Nova Agent Endpoint 不能为空")
+	}
 
 	token := strings.TrimSpace(firstEnv("NOVA_TOKEN", "NOVA_AGENT_TOKEN"))
 	if token == "" {
-		value, err := promptInput("Nova Token: ", "")
+		value, err := promptInput("访问令牌（NOVA_TOKEN）: ", "")
 		if err != nil {
 			return err
 		}
 		token = value
 	}
 	if token == "" {
-		return fmt.Errorf("Token 不能为空")
+		return fmt.Errorf("访问令牌不能为空")
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
@@ -311,7 +394,7 @@ func bootstrapRuntimeConfig() error {
 	_ = os.Setenv("NOVA_AGENT_TOKEN", token)
 
 	shellRC := detectShellRC(home)
-	if shellRC != "" {
+	if shellRC != "" && hasTTY() {
 		answer, err := promptInput(fmt.Sprintf("是否将配置自动加入 %s（y/N）? ", shellRC), "n")
 		if err != nil {
 			return err
@@ -374,6 +457,10 @@ func parseRuntimeConfig(content string) (string, string, error) {
 
 func defaultRuntimeConfigPath(home string) string {
 	return filepath.Join(home, ".nova", "client.env")
+}
+
+func runtimeConfigPath(home string) string {
+	return firstEnvOrDefault("NOVA_CLIENT_ENV", defaultRuntimeConfigPath(home))
 }
 
 type githubAsset struct {
@@ -727,6 +814,10 @@ func firstEnvOrDefault(key, value string) string {
 
 func isYes(value string) bool {
 	return strings.EqualFold(value, "y") || strings.EqualFold(value, "yes")
+}
+
+func isHelp(value string) bool {
+	return value == "-h" || value == "--help" || strings.EqualFold(value, "help")
 }
 
 func hasTTY() bool {

@@ -140,16 +140,10 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		switch sub {
 		case "status":
-			status, err := ctrl.Status(name)
+			status, err := resolveAppStatus(s.AppRoot, name, ctrl.Status)
 			if err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
-			}
-			if version, ok, err := deploy.CurrentVersion(s.AppRoot, name); err != nil {
-				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
-				return
-			} else if ok {
-				status.Version = version
 			}
 			api.RenderJSON(w, api.Response{Success: true, Data: status})
 		case "logs":

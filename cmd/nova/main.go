@@ -248,15 +248,69 @@ func deployTarget(ctx context.Context, cli *client.Client, target project.Target
 	if err := runShellCommands(ctx, target.Build.Commands); err != nil {
 		return err
 	}
-	artifactDir := target.Artifacts[0]
-	if err := prepareServiceArtifact(artifactDir, target); err != nil {
+	artifactPath, cleanup, err := prepareDeployArtifact(target.Artifacts[0], target)
+	if err != nil {
 		return err
 	}
-	if err := cli.Deploy(ctx, target.App, artifactDir); err != nil {
+	defer cleanup()
+	if err := cli.Deploy(ctx, target.App, artifactPath); err != nil {
 		return err
 	}
 	fmt.Println("deployed")
-	printArtifactSummary(artifactDir)
+	printArtifactSummary(artifactPath)
+	return nil
+}
+
+func prepareDeployArtifact(artifactPath string, target project.Target) (string, func(), error) {
+	cleanup := func() {}
+	info, err := os.Stat(artifactPath)
+	if err != nil {
+		return "", cleanup, fmt.Errorf("artifact path invalid: %w", err)
+	}
+	if info.IsDir() {
+		if err := prepareServiceArtifact(artifactPath, target); err != nil {
+			return "", cleanup, err
+		}
+		return artifactPath, cleanup, nil
+	}
+	if strings.TrimSpace(target.Service.Command) == "" {
+		return artifactPath, cleanup, nil
+	}
+
+	stagingDir, err := os.MkdirTemp("", "nova-artifact-stage-*")
+	if err != nil {
+		return "", cleanup, fmt.Errorf("create artifact staging dir: %w", err)
+	}
+	cleanup = func() { _ = os.RemoveAll(stagingDir) }
+	stagedFile := filepath.Join(stagingDir, filepath.Base(artifactPath))
+	if err := copyFile(artifactPath, stagedFile, info.Mode().Perm()); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	if err := prepareServiceArtifact(stagingDir, target); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	return stagingDir, cleanup, nil
+}
+
+func copyFile(srcPath, dstPath string, mode os.FileMode) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return fmt.Errorf("open artifact file: %w", err)
+	}
+	defer src.Close()
+	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+	if err != nil {
+		return fmt.Errorf("create staged artifact file: %w", err)
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return fmt.Errorf("copy artifact file: %w", err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close staged artifact file: %w", err)
+	}
 	return nil
 }
 

@@ -174,21 +174,24 @@ func (c *Client) deployArtifact(ctx context.Context, name string, artifactReader
 	return nil
 }
 
-func (c *Client) Deploy(ctx context.Context, name, artifactDir string) error {
-	if artifactDir == "" {
-		return fmt.Errorf("artifact dir required")
+func (c *Client) Deploy(ctx context.Context, name, artifactPath string) error {
+	if artifactPath == "" {
+		return fmt.Errorf("artifact path required")
 	}
-	if info, err := os.Stat(artifactDir); err != nil || !info.IsDir() {
-		return fmt.Errorf("artifact dir invalid: %w", err)
-	}
-	manifest, ok, err := artifact.LoadManifest(artifactDir)
+	info, err := os.Stat(artifactPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("artifact path invalid: %w", err)
 	}
-	if ok && strings.TrimSpace(manifest.Process.Command) != "" {
-		runPath := filepath.Join(artifactDir, "run")
-		if _, err := os.Stat(runPath); err != nil {
-			return fmt.Errorf("service artifact must contain run: %w", err)
+	if info.IsDir() {
+		manifest, ok, err := artifact.LoadManifest(artifactPath)
+		if err != nil {
+			return err
+		}
+		if ok && strings.TrimSpace(manifest.Process.Command) != "" {
+			runPath := filepath.Join(artifactPath, "run")
+			if _, err := os.Stat(runPath); err != nil {
+				return fmt.Errorf("service artifact must contain run: %w", err)
+			}
 		}
 	}
 	tmp, err := os.CreateTemp("", "nova-artifact-*.tar.gz")
@@ -199,7 +202,7 @@ func (c *Client) Deploy(ctx context.Context, name, artifactDir string) error {
 	_ = tmp.Close()
 	defer os.Remove(tmpPath)
 
-	if err := artifact.PackDir(artifactDir, tmpPath); err != nil {
+	if err := artifact.PackPath(artifactPath, tmpPath); err != nil {
 		return fmt.Errorf("pack artifact: %w", err)
 	}
 

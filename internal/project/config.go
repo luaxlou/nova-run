@@ -211,7 +211,7 @@ func resolveApp(cfg Config, name string, app App) (Target, error) {
 		return Target{}, fmt.Errorf("%s artifacts is required", label)
 	}
 	if len(target.Artifacts) != 1 {
-		return Target{}, fmt.Errorf("%s artifacts must contain exactly one runnable artifact directory", label)
+		return Target{}, fmt.Errorf("%s artifacts must contain exactly one deployable artifact path", label)
 	}
 	for i, artifactPath := range target.Artifacts {
 		if strings.TrimSpace(artifactPath) == "" {

@@ -40,7 +40,7 @@ func PackDir(sourceDir, destPath string) error {
 			return fmt.Errorf("resolve relative path: %w", err)
 		}
 		relPath = filepath.ToSlash(relPath)
-	if relPath == "." {
+		if relPath == "." {
 			return nil
 		}
 		if strings.HasPrefix(relPath, "..") {
@@ -78,6 +78,46 @@ func PackDir(sourceDir, destPath string) error {
 	})
 	if walkErr != nil {
 		return walkErr
+	}
+	return nil
+}
+
+func PackPath(sourcePath, destPath string) error {
+	sourcePath = filepath.Clean(sourcePath)
+	info, err := os.Stat(sourcePath)
+	if err != nil {
+		return fmt.Errorf("source path invalid: %w", err)
+	}
+	if info.IsDir() {
+		return PackDir(sourcePath, destPath)
+	}
+
+	target, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create archive: %w", err)
+	}
+	defer target.Close()
+
+	gw := gzip.NewWriter(target)
+	defer gw.Close()
+	tw := tar.NewWriter(gw)
+	defer tw.Close()
+
+	header, err := tar.FileInfoHeader(info, "")
+	if err != nil {
+		return fmt.Errorf("header for %s: %w", filepath.Base(sourcePath), err)
+	}
+	header.Name = filepath.ToSlash(filepath.Base(sourcePath))
+	if err := tw.WriteHeader(header); err != nil {
+		return fmt.Errorf("write header for %s: %w", header.Name, err)
+	}
+	src, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", sourcePath, err)
+	}
+	defer src.Close()
+	if _, err := io.Copy(tw, src); err != nil {
+		return fmt.Errorf("copy %s: %w", sourcePath, err)
 	}
 	return nil
 }

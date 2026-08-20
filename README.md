@@ -111,7 +111,7 @@ Nova Run 项目地址：
 
 请把 Nova Run 当作这个项目的运行生命周期入口：
 1. 先运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
-2. 识别项目的构建命令、运行入口和要发布的制品目录。
+2. 识别项目的构建命令、运行入口和要发布的制品路径。
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
    ```yaml
@@ -120,7 +120,7 @@ Nova Run 项目地址：
      commands:
        - <build-command>
    artifacts:
-     - <artifact-dir>
+     - <artifact-path>
    service:
      command: <start-command>
    ```
@@ -132,12 +132,12 @@ Nova Run 项目地址：
          commands:
            - <build-command>
        artifacts:
-         - <artifact-dir>
+         - <artifact-path>
        service:
          command: <start-command>
    ```
    `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
-6. 如果 `<artifact-dir>` 还不存在，请补齐最小必要的构建脚本，让构建结果稳定输出到该目录。
+6. 如果 `<artifact-path>` 还不存在，请补齐最小必要的构建命令，让构建结果稳定输出到该路径。
 7. 如果应用需要 Nova 接管进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
 8. 完成代码修改后，执行：
    `nova deploy`
@@ -187,7 +187,7 @@ nova remove [app]
 
 ## 项目部署配置
 
-项目根目录使用 `nova.yaml` 声明部署方式。Nova 命令默认服务当前目录，不接收临时应用名或制品目录参数，而是读取这份配置。
+项目根目录使用 `nova.yaml` 声明部署方式。Nova 命令默认服务当前目录，不接收临时应用名或制品路径参数，而是读取这份配置。
 
 ```yaml
 app: sbom-platform
@@ -235,11 +235,11 @@ nova status all
 nova logs sbom-platform-backend -f
 ```
 
-上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品目录。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
+上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品路径；这个路径可以是目录，也可以是单个文件。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
 
 ## 制品清单
 
-当项目配置声明了 `service.command`，Nova 会在发布前向制品目录写入 `run` 和 `nova.app.yaml`。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
+当项目配置声明了 `service.command`，Nova 会在发布前生成包含 `run` 和 `nova.app.yaml` 的部署包。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
 
 示例：
 

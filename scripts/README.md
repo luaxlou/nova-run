@@ -12,6 +12,10 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 在 Linux 服务器上安装 Nova 运行端。
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo bash
+```
+
 ## uninstall-agent.sh
 
 从 Linux 服务器上卸载 Nova 运行端。

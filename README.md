@@ -42,7 +42,7 @@ nova remove <app>
 在 Linux 服务器上执行：
 
 ```bash
-scripts/install-agent.sh
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo bash
 ```
 
 服务器侧负责接收发布请求，并通过 systemd/journald 管理应用进程和日志。

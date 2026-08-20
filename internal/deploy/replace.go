@@ -54,6 +54,9 @@ func ReplaceArtifact(dst, src string) error {
 	if err := os.Rename(tmpDir, targetPath); err != nil {
 		return fmt.Errorf("activate artifact: %w", err)
 	}
+	if err := os.Chmod(targetPath, 0o755); err != nil {
+		return fmt.Errorf("chmod app directory: %w", err)
+	}
 	staged = true
 	return nil
 }

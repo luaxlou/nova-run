@@ -101,6 +101,38 @@ nova list
 nova remove <app>
 ```
 
+## 可选应用清单
+
+Artifact 可以包含 `nova.app.yaml`，用于描述部署产物的边界。Nova 仍然只执行 `run` 并管理进程生命周期；清单只用于校验产物和输出服务器入口配置提示，不会修改 Caddy、Nginx、域名或 TLS。
+
+前后端分离但前端已静态构建的项目，推荐使用：
+
+```yaml
+app: sbom-platform
+process:
+  command: ./run
+static:
+  root: dist
+  spa: true
+backend:
+  port: 8080
+  health: /healthz
+  ready: /readyz
+  apiPrefix:
+    - /api/*
+```
+
+部署后 Nova 会提示：
+
+```text
+deployment edges:
+  static files: /var/lib/nova/apps/sbom-platform/dist
+  backend proxy: /api/* /healthz /readyz -> 127.0.0.1:8080
+  spa fallback: serve index.html for non-file routes
+```
+
+这类项目的推荐拓扑是：Nova 管后端进程，服务器 Web 入口直接服务 `dist/` 静态文件，并把 API 路径反代到后端端口。
+
 ## 安装服务器运行端
 
 在 Linux 服务器上执行：

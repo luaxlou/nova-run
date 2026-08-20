@@ -185,6 +185,9 @@ func (c *Client) Deploy(ctx context.Context, name, artifactDir string) error {
 	if _, err := os.Stat(runPath); err != nil {
 		return fmt.Errorf("artifact must contain run: %w", err)
 	}
+	if _, _, err := artifact.LoadManifest(artifactDir); err != nil {
+		return err
+	}
 	tmp, err := os.CreateTemp("", "nova-artifact-*.tar.gz")
 	if err != nil {
 		return fmt.Errorf("create temporary archive: %w", err)

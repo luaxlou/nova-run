@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/luaxlou/glow-ops/internal/agent"
+	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/client"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
@@ -96,6 +97,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("deployed")
+		printArtifactAdvice(rest[0], rest[1])
 	case "start":
 		ensureName(rest)
 		if err := cli.Start(ctx, rest[0]); err != nil {
@@ -188,6 +190,25 @@ func main() {
 	default:
 		usage()
 		os.Exit(1)
+	}
+}
+
+func printArtifactAdvice(appName, artifactDir string) {
+	manifest, ok, err := artifact.LoadManifest(artifactDir)
+	if err != nil {
+		fmt.Printf("artifact advice skipped: %v\n", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	advice := artifact.DeploymentAdvice(appName, manifest)
+	if len(advice) == 0 {
+		return
+	}
+	fmt.Println("deployment edges:")
+	for _, line := range advice {
+		fmt.Printf("  %s\n", line)
 	}
 }
 

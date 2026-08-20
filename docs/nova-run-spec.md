@@ -10,6 +10,33 @@
 5. rollback = 本地重部署
 6. 运行真相来自 systemd，日志真相来自 journald
 
+## 前端静态资源
+
+Nova 不为前端静态资源启动独立进程。前端已经构建为 `dist/` 时，artifact 可以携带 `nova.app.yaml` 描述静态资源与后端 API 边界：
+
+```yaml
+app: example
+process:
+  command: ./run
+static:
+  root: dist
+  spa: true
+backend:
+  port: 8080
+  health: /healthz
+  ready: /readyz
+  apiPrefix:
+    - /api/*
+```
+
+Nova 对该清单只做三件事：
+
+1. 发布前校验 `static.root` 存在且位于 artifact 内。
+2. 保持 systemd 只执行 artifact 根目录的 `run`。
+3. 发布后打印静态文件路径和反向代理建议。
+
+Nova 不创建、不修改、不 reload Caddy/Nginx，也不管理域名、TLS、安全组或云厂商解析记录。
+
 ## API/CLI 对应关系
 - `PUT /v1/apps/{name}` -> `nova deploy`
 - `POST /v1/apps/{name}/start` -> `nova start`

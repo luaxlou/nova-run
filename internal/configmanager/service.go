@@ -1,7 +1,6 @@
 package configmanager
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 

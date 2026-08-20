@@ -125,7 +125,7 @@ func (c *Client) parseResponse(payload []byte, out any) error {
 		if resp.Message == "" {
 			return fmt.Errorf("request not successful")
 		}
-		return fmt.Errorf(resp.Message)
+		return fmt.Errorf("%s", resp.Message)
 	}
 	if out == nil {
 		return nil

@@ -36,26 +36,56 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 
 ## 给 AI 的提示词
 
-当项目开发、构建和发布主要交给 AI 处理时，可以把下面这段提示词放进项目说明、任务描述或 AI 代码助手的上下文里：
+当项目开发、构建和发布主要交给 AI 处理时，可以按任务阶段选择下面两类提示词。
+
+### 安装和配置 Nova Run
+
+当目标是让 AI 帮你安装 Nova Run 客户端、安装服务器 Agent，并完成首次连接配置时，使用这段：
 
 ```text
-你正在协助维护一个需要通过 Nova 发布到单台 Linux 服务器的项目。
+你正在协助我安装和配置 Nova Run。
 
-请把 Nova 当作项目的运行生命周期工具使用：
-- 本机先安装 `nova` 客户端。
-- 服务器先安装 Nova Agent，并保存安装脚本输出的 Nova Agent Endpoint 和访问令牌。
-- 在项目根目录执行 `nova init`，把该项目绑定到目标 Nova Agent。
-- 每次完成代码修改后，先按项目自己的方式构建产物，再执行 `nova deploy <app> <artifact_dir>` 发布。
-- 发布后用 `nova status <app>` 确认运行状态，用 `nova logs <app>` 或 `nova logs <app> -f` 查看日志。
-- 需要控制进程时使用 `nova start <app>`、`nova stop <app>`、`nova restart <app>`。
+请完成这些工作：
+- 在本机安装 `nova` 客户端。
+- 在目标 Linux 服务器上安装 Nova Agent。
+- 确认服务器 `32102/tcp` 可以从本机访问。
+- 获取 Nova Agent Endpoint 和访问令牌。
+- 在本机项目目录中执行 `nova init`，把当前项目绑定到目标 Nova Agent。
+- 用 `nova list` 验证本机客户端已经能连接服务器。
 
 请遵守这些边界：
-- Nova 只负责单机部署、进程生命周期和日志查看。
-- Nova 不管理数据库、缓存、域名、Nginx、Ingress、负载均衡或服务发现。
-- 如果发布失败，先检查本地构建产物、Nova Agent Endpoint、访问令牌、服务器 systemd 状态和 journald 日志。
-- 不要在仓库里生成临时密钥、访问令牌或服务器私密配置；需要凭据时提示用户从安全位置提供。
+- Nova Agent 只安装在 Linux 服务器上。
+- 不要把访问令牌、SSH 密钥或云厂商凭据写入仓库。
+- 如果需要开放云安全组或防火墙，请先说明要开放的端口、协议和来源范围。
+- 安装完成后，请说明客户端安装位置、Agent 服务状态、Endpoint、配置文件位置和验证结果。
+```
 
-执行任务时，请主动完成：代码修改、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
+### 在项目中引入 Nova Run
+
+当 Nova Run 已经安装并且本机客户端已经配置完毕，只需要让 AI 在项目中使用 Nova Run 接管发布、运行、日志和生命周期时，使用这段：
+
+```text
+你正在协助维护一个已经配置好 Nova Run 的项目。
+
+请假定本机 `nova` 客户端已经安装，且当前项目已经通过 `nova init` 绑定到目标 Nova Agent。
+
+请把 Nova Run 当作这个项目的运行生命周期入口：
+- 先识别项目的构建方式和产物目录。
+- 如果项目还没有清晰的构建产物，请补齐最小必要的构建脚本或说明。
+- 每次完成代码修改后，先运行项目测试和构建。
+- 构建成功后，用 `nova deploy <app> <artifact_dir>` 发布产物。
+- 发布后用 `nova status <app>` 确认运行状态。
+- 需要排查问题时，用 `nova logs <app>` 或 `nova logs <app> -f` 查看日志。
+- 需要控制进程时，用 `nova start <app>`、`nova stop <app>`、`nova restart <app>`。
+- 需要移除应用时，用 `nova remove <app>`。
+
+请遵守这些边界：
+- Nova Run 只负责单机部署、进程生命周期和日志查看。
+- Nova Run 不管理数据库、缓存、域名、Nginx、Ingress、负载均衡或服务发现。
+- 不要把 Nova 访问令牌、服务器私密配置或临时密钥写入仓库。
+- 如果发布失败，按顺序检查：本地构建产物、`nova` 目标配置、Agent 连通性、服务器 systemd 状态和 journald 日志。
+
+执行任务时，请主动完成：代码修改、测试、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
 ```
 
 ## 管理项目

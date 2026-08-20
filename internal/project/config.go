@@ -100,7 +100,7 @@ func Resolve(cfg Config, selector string) (Target, error) {
 func resolveApp(cfg Config, name string, app App) (Target, error) {
 	target := Target{
 		Name:     name,
-		App:      firstNonEmpty(app.App, cfg.App),
+		App:      firstNonEmpty(app.App, cfg.App, name),
 		Build:    mergeBuild(cfg.Build, app.Build),
 		Artifact: mergeArtifact(cfg.Artifact, app.Artifact),
 	}

@@ -13,7 +13,7 @@ build:
   commands:
     - npm run build
 artifact:
-  dir: .nova/artifact
+  dir: dist/nova
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +28,7 @@ artifact:
 	if cfg.App != "demo" {
 		t.Fatalf("app = %q", cfg.App)
 	}
-	if cfg.Artifact.Dir != ".nova/artifact" {
+	if cfg.Artifact.Dir != "dist/nova" {
 		t.Fatalf("artifact dir = %q", cfg.Artifact.Dir)
 	}
 }
@@ -46,12 +46,12 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	cfg := Config{
 		App:      "demo",
 		Build:    BuildConfig{Commands: []string{"npm run build"}},
-		Artifact: ArtifactConfig{Dir: ".nova/default"},
+		Artifact: ArtifactConfig{Dir: "dist/default"},
 		Apps: map[string]App{
 			"backend": {
 				App:      "demo-backend",
 				Build:    BuildConfig{Commands: []string{"go build ./cmd/api"}},
-				Artifact: ArtifactConfig{Dir: ".nova/backend"},
+				Artifact: ArtifactConfig{Dir: "backend/dist/api"},
 			},
 		},
 	}
@@ -63,7 +63,29 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	if target.App != "demo-backend" {
 		t.Fatalf("app = %q", target.App)
 	}
-	if target.Artifact.Dir != ".nova/backend" {
+	if target.Artifact.Dir != "backend/dist/api" {
 		t.Fatalf("artifact = %q", target.Artifact.Dir)
+	}
+}
+
+func TestResolveSubAppDefaultsAppNameToSelector(t *testing.T) {
+	cfg := Config{
+		Apps: map[string]App{
+			"sbom-platform": {
+				Build:    BuildConfig{Commands: []string{"scripts/build.sh"}},
+				Artifact: ArtifactConfig{Dir: "backend/dist/sbom-platform"},
+			},
+		},
+	}
+
+	target, err := Resolve(cfg, "sbom-platform")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Name != "sbom-platform" {
+		t.Fatalf("name = %q", target.Name)
+	}
+	if target.App != "sbom-platform" {
+		t.Fatalf("app = %q", target.App)
 	}
 }

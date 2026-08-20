@@ -125,14 +125,14 @@ Nova Run 项目地址：
 5. 多子应用项目使用这个结构：
    ```yaml
    apps:
-     <app-selector>:
-       app: <remote-app-name>
+     <app-name>:
        build:
          commands:
            - <build-command>
        artifact:
          dir: <artifact-dir>
    ```
+   `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
 6. 如果 `<artifact-dir>` 还不存在，请补齐最小必要的构建脚本，让构建结果稳定输出到该目录。
 7. 确保 artifact 目录中包含可在服务器上启动应用的入口，例如 `run` 脚本或可执行文件。
 8. 完成代码修改后，执行：
@@ -188,36 +188,36 @@ build:
     - npm run build
     - scripts/build-nova-artifact.sh
 artifact:
-  dir: .nova/artifact
+  dir: dist/nova
 ```
 
 多子应用项目可以在 `apps` 下声明可选目标：
 
 ```yaml
 apps:
-  backend:
-    app: sbom-platform-backend
+  sbom-platform-backend:
     build:
       commands:
-        - go build -o .nova/backend/app ./cmd/api
+        - scripts/build-backend-artifact.sh
     artifact:
-      dir: .nova/backend
-  worker:
-    app: sbom-platform-worker
+      dir: backend/dist/backend
+  sbom-platform-worker:
     build:
       commands:
-        - go build -o .nova/worker/app ./cmd/worker
+        - scripts/build-worker-artifact.sh
     artifact:
-      dir: .nova/worker
+      dir: worker/dist/worker
 ```
 
 之后使用：
 
 ```bash
-nova deploy backend
-nova restart worker
-nova logs backend -f
+nova deploy sbom-platform-backend
+nova restart sbom-platform-worker
+nova logs sbom-platform-backend -f
 ```
+
+上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifact.dir` 指向的制品目录。
 
 ## 可选制品清单
 

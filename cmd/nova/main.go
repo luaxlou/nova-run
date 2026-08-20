@@ -20,6 +20,7 @@ import (
 
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/client"
+	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
 
 func usage() {
@@ -208,6 +209,10 @@ func runAgent(args []string) error {
 	}
 	if len(fs.Args()) > 0 {
 		return fmt.Errorf("agent command only accepts flags")
+	}
+
+	if err := novaruntime.EnsureAppServiceTemplate(*appRoot); err != nil {
+		return err
 	}
 
 	mux := agent.NewServer(*appRoot, readTokenFile(*tokenFile)).Handler()

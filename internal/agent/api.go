@@ -1,13 +1,14 @@
 package agent
 
 import (
-	"fmt"
 	"bufio"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
-	"sort"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -22,7 +23,11 @@ type Server struct {
 }
 
 func NewServer(appRoot, token string) *Server {
-	return &Server{Token: token, AppRoot: filepath.Clean(appRoot)}
+	cleanRoot := filepath.Clean(appRoot)
+	if err := runtime.EnsureAppServiceTemplate(cleanRoot); err != nil {
+		log.Printf("nova app service template setup failed: %v", err)
+	}
+	return &Server{Token: token, AppRoot: cleanRoot}
 }
 
 func (s *Server) Handler() http.Handler {

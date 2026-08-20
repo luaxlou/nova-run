@@ -76,12 +76,31 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 EOF
 
+cat > "/etc/systemd/system/nova@.service" <<EOF
+[Unit]
+Description=Nova App %i
+After=network.target ${SERVICE_NAME}
+
+[Service]
+Type=simple
+WorkingDirectory=${APP_ROOT}/%i
+ExecStart=${APP_ROOT}/%i/run
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
 
 echo "nova runtime installed"
 echo "binary: ${INSTALL_DIR}/nova"
 echo "service: ${SERVICE_NAME}"
+echo "app service template: nova@.service"
 echo "token: ${TOKEN_FILE}"
 
 PORT="${LISTEN_ADDR##*:}"

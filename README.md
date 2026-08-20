@@ -12,10 +12,20 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 安装不会初始化项目，不会写项目配置，也不会询问 Nova Agent Endpoint 或访问令牌。
 
-如果本机已经安装过 `nova`，安装脚本会优先更新当前 `PATH` 中正在使用的 `nova` 所在目录。之后也可以直接执行：
+## 更新本地 Nova 客户端
+
+Nova 不提供 `nova update` 命令。更新本地客户端时，重新执行安装脚本：
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
+```
+
+如果本机已经安装过 `nova`，脚本会优先覆盖当前 `PATH` 中正在使用的 `nova` 所在目录。例如当前命令来自 `/opt/homebrew/bin/nova`，脚本会优先更新这个文件。
+
+需要固定版本时，传入 `NOVA_VERSION`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.1.6 bash
 ```
 
 ## 初始化项目

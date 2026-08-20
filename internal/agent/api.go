@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/deploy"
 	"github.com/luaxlou/glow-ops/internal/runtime"
 	"github.com/luaxlou/glow-ops/pkg/api"
@@ -108,6 +109,10 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		switch sub {
 		case "start":
+			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, name)) {
+				api.RenderJSONError(w, http.StatusBadRequest, "app is static and has no service command")
+				return
+			}
 			if err := ctrl.Start(name); err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -120,6 +125,10 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 			}
 			api.RenderJSON(w, api.Response{Success: true, Message: "stop requested"})
 		case "restart":
+			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, name)) {
+				api.RenderJSONError(w, http.StatusBadRequest, "app is static and has no service command")
+				return
+			}
 			if err := ctrl.Restart(name); err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return

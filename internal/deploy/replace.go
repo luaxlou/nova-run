@@ -38,8 +38,14 @@ func ReplaceArtifact(dst, src string) error {
 	if err := extractArchive(artifactPath, tmpDir); err != nil {
 		return err
 	}
-	if err := artifact.EnsureRunBinary(tmpDir); err != nil {
+	manifest, ok, err := artifact.LoadManifest(tmpDir)
+	if err != nil {
 		return fmt.Errorf("invalid artifact: %w", err)
+	}
+	if ok && strings.TrimSpace(manifest.Process.Command) != "" {
+		if err := artifact.EnsureRunBinary(tmpDir); err != nil {
+			return fmt.Errorf("invalid service artifact: %w", err)
+		}
 	}
 
 	if err := os.RemoveAll(targetPath); err != nil {

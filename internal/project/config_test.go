@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -12,7 +13,10 @@ func TestLoadProjectConfig(t *testing.T) {
 build:
   commands:
     - npm run build
-artifacts: dist/nova
+artifacts:
+  - dist/nova
+service:
+  command: ./app
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +31,8 @@ artifacts: dist/nova
 	if cfg.App != "demo" {
 		t.Fatalf("app = %q", cfg.App)
 	}
-	if cfg.Artifacts != "dist/nova" {
-		t.Fatalf("artifacts = %q", cfg.Artifacts)
+	if !slices.Equal(cfg.Artifacts, []string{"dist/nova"}) {
+		t.Fatalf("artifacts = %#v", cfg.Artifacts)
 	}
 }
 
@@ -41,16 +45,24 @@ func TestValidateRequiresAppAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsStaticArtifactWithoutService(t *testing.T) {
+	err := Validate(Config{App: "docs", Artifacts: []string{"dist/docs"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	cfg := Config{
 		App:       "demo",
 		Build:     BuildConfig{Commands: []string{"npm run build"}},
-		Artifacts: "dist/default",
+		Artifacts: []string{"dist/default"},
 		Apps: map[string]App{
 			"backend": {
 				App:       "demo-backend",
 				Build:     BuildConfig{Commands: []string{"go build ./cmd/api"}},
-				Artifacts: "backend/dist/api",
+				Artifacts: []string{"backend/dist/api"},
+				Service:   ServiceConfig{Command: "./api"},
 			},
 		},
 	}
@@ -62,8 +74,8 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	if target.App != "demo-backend" {
 		t.Fatalf("app = %q", target.App)
 	}
-	if target.Artifacts != "backend/dist/api" {
-		t.Fatalf("artifacts = %q", target.Artifacts)
+	if !slices.Equal(target.Artifacts, []string{"backend/dist/api"}) {
+		t.Fatalf("artifacts = %#v", target.Artifacts)
 	}
 }
 
@@ -72,7 +84,8 @@ func TestResolveSubAppDefaultsAppNameToSelector(t *testing.T) {
 		Apps: map[string]App{
 			"sbom-platform": {
 				Build:     BuildConfig{Commands: []string{"scripts/build.sh"}},
-				Artifacts: "backend/dist/sbom-platform",
+				Artifacts: []string{"backend/dist/sbom-platform"},
+				Service:   ServiceConfig{Command: "./sbom-api"},
 			},
 		},
 	}

@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -221,12 +222,81 @@ func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string)
 	if err := runShellCommands(ctx, target.Build.Commands); err != nil {
 		return err
 	}
-	if err := cli.Deploy(ctx, target.App, target.Artifacts); err != nil {
+	artifactDir := target.Artifacts[0]
+	if err := prepareServiceArtifact(artifactDir, target); err != nil {
+		return err
+	}
+	if err := cli.Deploy(ctx, target.App, artifactDir); err != nil {
 		return err
 	}
 	fmt.Println("deployed")
-	printArtifactSummary(target.Artifacts)
+	printArtifactSummary(artifactDir)
 	return nil
+}
+
+func prepareServiceArtifact(artifactDir string, target project.Target) error {
+	if strings.TrimSpace(target.Service.Command) == "" {
+		return nil
+	}
+	if err := writeRunScript(artifactDir, target.Service); err != nil {
+		return err
+	}
+	files, err := topLevelArtifactFiles(artifactDir)
+	if err != nil {
+		return err
+	}
+	manifest := artifact.Manifest{
+		App:      target.App,
+		Artifact: artifact.ArtifactManifest{Files: files},
+		Process:  artifact.ProcessManifest{Command: target.Service.Command},
+		Runtime:  artifact.RuntimeManifest{HealthCommand: target.Service.HealthCommand},
+	}
+	if err := artifact.SaveManifest(artifactDir, manifest); err != nil {
+		return err
+	}
+	return nil
+}
+
+func writeRunScript(artifactDir string, service project.ServiceConfig) error {
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		return fmt.Errorf("create artifact dir: %w", err)
+	}
+	lines := []string{"#!/usr/bin/env sh", "set -eu"}
+	keys := make([]string, 0, len(service.Env))
+	for key := range service.Env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		lines = append(lines, fmt.Sprintf("export %s=%s", key, shellQuote(service.Env[key])))
+	}
+	lines = append(lines, "exec sh -lc "+shellQuote(service.Command))
+	content := strings.Join(lines, "\n") + "\n"
+	if err := os.WriteFile(filepath.Join(artifactDir, "run"), []byte(content), 0o755); err != nil {
+		return fmt.Errorf("write service run script: %w", err)
+	}
+	return nil
+}
+
+func topLevelArtifactFiles(artifactDir string) ([]string, error) {
+	items, err := os.ReadDir(artifactDir)
+	if err != nil {
+		return nil, fmt.Errorf("read artifact dir: %w", err)
+	}
+	files := []string{}
+	for _, item := range items {
+		name := item.Name()
+		if name == artifact.ManifestFile {
+			continue
+		}
+		files = append(files, name)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func loadTargetFromArgs(args []string) (project.Target, error) {

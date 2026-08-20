@@ -24,7 +24,7 @@ artifact:
     - app
     - dist
 process:
-  command: ./run
+  command: ./app
 runtime:
   healthCommand: ./run --health
 `), 0o644); err != nil {
@@ -47,14 +47,14 @@ func TestDeploymentSummaryDescribesArtifactAndRuntime(t *testing.T) {
 	lines := DeploymentSummary(Manifest{
 		App:      "demo",
 		Artifact: ArtifactManifest{Files: []string{"run", "app", "dist"}},
-		Process:  ProcessManifest{Command: "./run"},
+		Process:  ProcessManifest{Command: "./app"},
 		Runtime:  RuntimeManifest{HealthCommand: "./run --health"},
 	})
 
 	expected := []string{
 		"app: demo",
 		"artifact files: run, app, dist",
-		"process command: ./run",
+		"process command: ./app",
 		"health command: ./run --health",
 	}
 	if len(lines) != len(expected) {

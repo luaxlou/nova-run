@@ -181,12 +181,15 @@ func (c *Client) Deploy(ctx context.Context, name, artifactDir string) error {
 	if info, err := os.Stat(artifactDir); err != nil || !info.IsDir() {
 		return fmt.Errorf("artifact dir invalid: %w", err)
 	}
-	runPath := filepath.Join(artifactDir, "run")
-	if _, err := os.Stat(runPath); err != nil {
-		return fmt.Errorf("artifact must contain run: %w", err)
-	}
-	if _, _, err := artifact.LoadManifest(artifactDir); err != nil {
+	manifest, ok, err := artifact.LoadManifest(artifactDir)
+	if err != nil {
 		return err
+	}
+	if ok && strings.TrimSpace(manifest.Process.Command) != "" {
+		runPath := filepath.Join(artifactDir, "run")
+		if _, err := os.Stat(runPath); err != nil {
+			return fmt.Errorf("service artifact must contain run: %w", err)
+		}
 	}
 	tmp, err := os.CreateTemp("", "nova-artifact-*.tar.gz")
 	if err != nil {

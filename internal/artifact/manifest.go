@@ -49,9 +49,25 @@ func LoadManifest(artifactDir string) (Manifest, bool, error) {
 	return manifest, true, nil
 }
 
+func SaveManifest(artifactDir string, manifest Manifest) error {
+	if err := ValidateManifest(artifactDir, manifest); err != nil {
+		return err
+	}
+	payload, err := yaml.Marshal(manifest)
+	if err != nil {
+		return fmt.Errorf("marshal %s: %w", ManifestFile, err)
+	}
+	if err := os.WriteFile(filepath.Join(artifactDir, ManifestFile), payload, 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", ManifestFile, err)
+	}
+	return nil
+}
+
 func ValidateManifest(artifactDir string, manifest Manifest) error {
-	if strings.TrimSpace(manifest.Process.Command) != "" && strings.TrimSpace(manifest.Process.Command) != "./run" {
-		return fmt.Errorf("%s process.command must be ./run; Nova executes the artifact run file", ManifestFile)
+	if command := strings.TrimSpace(manifest.Process.Command); command != "" {
+		if strings.Contains(command, "\x00") || strings.Contains(command, "\n") || strings.Contains(command, "\r") {
+			return fmt.Errorf("%s process.command contains invalid characters", ManifestFile)
+		}
 	}
 	for _, file := range manifest.Artifact.Files {
 		clean := filepath.Clean(strings.TrimSpace(file))

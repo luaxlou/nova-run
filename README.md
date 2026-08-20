@@ -119,7 +119,10 @@ Nova Run 项目地址：
    build:
      commands:
        - <build-command>
-   artifacts: <artifact-dir>
+   artifacts:
+     - <artifact-dir>
+   service:
+     command: <start-command>
    ```
 5. 多子应用项目使用这个结构：
    ```yaml
@@ -128,11 +131,14 @@ Nova Run 项目地址：
        build:
          commands:
            - <build-command>
-       artifacts: <artifact-dir>
+       artifacts:
+         - <artifact-dir>
+       service:
+         command: <start-command>
    ```
    `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
 6. 如果 `<artifact-dir>` 还不存在，请补齐最小必要的构建脚本，让构建结果稳定输出到该目录。
-7. 确保 artifact 目录中包含可在服务器上启动应用的入口，例如 `run` 脚本或可执行文件。
+7. 如果应用需要 Nova 接管进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
 8. 完成代码修改后，执行：
    `nova deploy`
    多子应用时执行：
@@ -184,8 +190,11 @@ app: sbom-platform
 build:
   commands:
     - npm run build
-    - scripts/build-nova-artifact.sh
-artifacts: dist/nova
+    - scripts/build-release.sh
+artifacts:
+  - dist/nova
+service:
+  command: ./app
 ```
 
 多子应用项目可以在 `apps` 下声明可选目标：
@@ -196,12 +205,21 @@ apps:
     build:
       commands:
         - scripts/build-backend-artifact.sh
-    artifacts: backend/dist/backend
+    artifacts:
+      - backend/dist/backend
+    service:
+      command: ./api
+      env:
+        CONFIG_PATH: ./config.yaml
+      healthCommand: curl -fsS http://127.0.0.1:8080/healthz
   sbom-platform-worker:
     build:
       commands:
         - scripts/build-worker-artifact.sh
-    artifacts: worker/dist/worker
+    artifacts:
+      - worker/dist/worker
+    service:
+      command: ./worker
 ```
 
 之后使用：
@@ -212,11 +230,11 @@ nova restart sbom-platform-worker
 nova logs sbom-platform-backend -f
 ```
 
-上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品目录。
+上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品目录。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
 
-## 可选制品清单
+## 制品清单
 
-Artifact 可以包含 `nova.app.yaml`，用于描述制品和运行入口。Nova 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
+当项目配置声明了 `service.command`，Nova 会在发布前向制品目录写入 `run` 和 `nova.app.yaml`。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
 
 示例：
 
@@ -229,7 +247,7 @@ artifact:
     - config.yaml
     - dist
 process:
-  command: ./run
+  command: ./app
 runtime:
   healthCommand: curl -fsS http://127.0.0.1:8080/healthz
 ```
@@ -240,7 +258,7 @@ runtime:
 artifact manifest:
   app: sbom-platform
   artifact files: run, sbom-api, config.yaml, dist
-  process command: ./run
+  process command: ./app
   health command: curl -fsS http://127.0.0.1:8080/healthz
 ```
 

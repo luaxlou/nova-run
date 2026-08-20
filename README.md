@@ -73,7 +73,7 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 - 先识别项目的构建方式和产物目录。
 - 如果项目还没有清晰的构建产物，请补齐最小必要的构建脚本或说明。
 - 每次完成代码修改后，先运行项目测试和构建。
-- 构建成功后，用 `nova deploy <app> <artifact_dir>` 发布产物。
+- 构建成功后，用 `nova deploy` 读取项目 `nova.yaml` 并发布产物。
 - 发布后用 `nova status <app>` 确认运行状态。
 - 需要排查问题时，用 `nova logs <app>` 或 `nova logs <app> -f` 查看日志。
 - 需要控制进程时，用 `nova start <app>`、`nova stop <app>`、`nova restart <app>`。
@@ -91,7 +91,7 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 ## 管理项目
 
 ```bash
-nova deploy <app> <artifact_dir>
+nova deploy
 nova start <app>
 nova stop <app>
 nova restart <app>
@@ -101,37 +101,51 @@ nova list
 nova remove <app>
 ```
 
-## 可选应用清单
+## 项目部署配置
 
-Artifact 可以包含 `nova.app.yaml`，用于描述部署产物的边界。Nova 仍然只执行 `run` 并管理进程生命周期；清单只用于校验产物和输出服务器入口配置提示，不会修改 Caddy、Nginx、域名或 TLS。
-
-前后端分离但前端已静态构建的项目，推荐使用：
+项目根目录使用 `nova.yaml` 声明部署方式。`nova deploy` 不接收应用名和制品目录参数，而是读取这份配置，先执行构建命令，再发布指定制品目录。
 
 ```yaml
 app: sbom-platform
+build:
+  commands:
+    - npm run build
+    - scripts/build-nova-artifact.sh
+artifact:
+  dir: .nova/artifact
+```
+
+## 可选制品清单
+
+Artifact 可以包含 `nova.app.yaml`，用于描述制品和运行入口。Nova 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
+
+示例：
+
+```yaml
+app: sbom-platform
+artifact:
+  files:
+    - run
+    - sbom-api
+    - config.yaml
+    - dist
 process:
   command: ./run
-static:
-  root: dist
-  spa: true
-backend:
-  port: 8080
-  health: /healthz
-  ready: /readyz
-  apiPrefix:
-    - /api/*
+runtime:
+  healthCommand: curl -fsS http://127.0.0.1:8080/healthz
 ```
 
 部署后 Nova 会提示：
 
 ```text
-deployment edges:
-  static files: /var/lib/nova/apps/sbom-platform/dist
-  backend proxy: /api/* /healthz /readyz -> 127.0.0.1:8080
-  spa fallback: serve index.html for non-file routes
+artifact manifest:
+  app: sbom-platform
+  artifact files: run, sbom-api, config.yaml, dist
+  process command: ./run
+  health command: curl -fsS http://127.0.0.1:8080/healthz
 ```
 
-这类项目的推荐拓扑是：Nova 管后端进程，服务器 Web 入口直接服务 `dist/` 静态文件，并把 API 路径反代到后端端口。
+服务器 Web 入口、静态文件服务、反向代理和 TLS 属于服务器环境配置，不属于 Nova 生命周期模型。
 
 ## 安装服务器运行端
 

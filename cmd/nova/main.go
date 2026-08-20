@@ -21,6 +21,7 @@ import (
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/client"
+	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
 
@@ -31,7 +32,7 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova deploy <app> <artifact_dir>
+  nova deploy         # 读取当前目录 nova.yaml，执行构建并发布
   nova start <app>
   nova stop <app>
   nova restart <app>
@@ -88,16 +89,14 @@ func main() {
 			os.Exit(1)
 		}
 	case "deploy":
-		if len(rest) < 2 {
-			fmt.Println("ERROR: nova deploy <app> <artifact_dir>")
+		if len(rest) != 0 {
+			fmt.Println("ERROR: nova deploy now reads nova.yaml and does not accept positional app/artifact arguments")
 			os.Exit(1)
 		}
-		if err := cli.Deploy(ctx, rest[0], rest[1]); err != nil {
+		if err := runConfiguredDeploy(ctx, cli); err != nil {
 			fmt.Printf("deploy failed: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("deployed")
-		printArtifactAdvice(rest[0], rest[1])
 	case "start":
 		ensureName(rest)
 		if err := cli.Start(ctx, rest[0]); err != nil {
@@ -193,21 +192,45 @@ func main() {
 	}
 }
 
-func printArtifactAdvice(appName, artifactDir string) {
+func runConfiguredDeploy(ctx context.Context, cli *client.Client) error {
+	cfg, path, err := project.Load(".")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("project config: %s\n", path)
+	for _, command := range cfg.Build.Commands {
+		fmt.Printf("$ %s\n", command)
+		cmd := exec.CommandContext(ctx, "sh", "-lc", command)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("build command failed: %w", err)
+		}
+	}
+	if err := cli.Deploy(ctx, cfg.App, cfg.Artifact.Dir); err != nil {
+		return err
+	}
+	fmt.Println("deployed")
+	printArtifactSummary(cfg.Artifact.Dir)
+	return nil
+}
+
+func printArtifactSummary(artifactDir string) {
 	manifest, ok, err := artifact.LoadManifest(artifactDir)
 	if err != nil {
-		fmt.Printf("artifact advice skipped: %v\n", err)
+		fmt.Printf("artifact manifest skipped: %v\n", err)
 		return
 	}
 	if !ok {
 		return
 	}
-	advice := artifact.DeploymentAdvice(appName, manifest)
-	if len(advice) == 0 {
+	summary := artifact.DeploymentSummary(manifest)
+	if len(summary) == 0 {
 		return
 	}
-	fmt.Println("deployment edges:")
-	for _, line := range advice {
+	fmt.Println("artifact manifest:")
+	for _, line := range summary {
 		fmt.Printf("  %s\n", line)
 	}
 }

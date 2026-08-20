@@ -12,26 +12,22 @@ import (
 const ManifestFile = "nova.app.yaml"
 
 type Manifest struct {
-	App     string          `json:"app,omitempty" yaml:"app,omitempty"`
-	Process ProcessManifest `json:"process,omitempty" yaml:"process,omitempty"`
-	Static  StaticManifest  `json:"static,omitempty" yaml:"static,omitempty"`
-	Backend BackendManifest `json:"backend,omitempty" yaml:"backend,omitempty"`
+	App      string           `json:"app,omitempty" yaml:"app,omitempty"`
+	Artifact ArtifactManifest `json:"artifact,omitempty" yaml:"artifact,omitempty"`
+	Process  ProcessManifest  `json:"process,omitempty" yaml:"process,omitempty"`
+	Runtime  RuntimeManifest  `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+}
+
+type ArtifactManifest struct {
+	Files []string `json:"files,omitempty" yaml:"files,omitempty"`
 }
 
 type ProcessManifest struct {
 	Command string `json:"command,omitempty" yaml:"command,omitempty"`
 }
 
-type StaticManifest struct {
-	Root string `json:"root,omitempty" yaml:"root,omitempty"`
-	SPA  bool   `json:"spa,omitempty" yaml:"spa,omitempty"`
-}
-
-type BackendManifest struct {
-	Port      int      `json:"port,omitempty" yaml:"port,omitempty"`
-	Health    string   `json:"health,omitempty" yaml:"health,omitempty"`
-	Ready     string   `json:"ready,omitempty" yaml:"ready,omitempty"`
-	APIPrefix []string `json:"apiPrefix,omitempty" yaml:"apiPrefix,omitempty"`
+type RuntimeManifest struct {
+	HealthCommand string `json:"healthCommand,omitempty" yaml:"healthCommand,omitempty"`
 }
 
 func LoadManifest(artifactDir string) (Manifest, bool, error) {
@@ -57,48 +53,36 @@ func ValidateManifest(artifactDir string, manifest Manifest) error {
 	if strings.TrimSpace(manifest.Process.Command) != "" && strings.TrimSpace(manifest.Process.Command) != "./run" {
 		return fmt.Errorf("%s process.command must be ./run; Nova executes the artifact run file", ManifestFile)
 	}
-	if root := strings.TrimSpace(manifest.Static.Root); root != "" {
-		clean := filepath.Clean(root)
-		if clean == "." || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
-			return fmt.Errorf("%s static.root must be a relative path inside the artifact", ManifestFile)
+	for _, file := range manifest.Artifact.Files {
+		clean := filepath.Clean(strings.TrimSpace(file))
+		if clean == "" || clean == "." || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
+			return fmt.Errorf("%s artifact.files contains an invalid path: %q", ManifestFile, file)
 		}
-		info, err := os.Stat(filepath.Join(artifactDir, clean))
-		if err != nil {
-			return fmt.Errorf("%s static.root not found: %w", ManifestFile, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("%s static.root is not a directory", ManifestFile)
+		if _, err := os.Stat(filepath.Join(artifactDir, clean)); err != nil {
+			return fmt.Errorf("%s artifact file %q not found: %w", ManifestFile, file, err)
 		}
 	}
-	if manifest.Backend.Port < 0 || manifest.Backend.Port > 65535 {
-		return fmt.Errorf("%s backend.port is invalid", ManifestFile)
+	if command := strings.TrimSpace(manifest.Runtime.HealthCommand); command != "" {
+		if strings.Contains(command, "\x00") || strings.Contains(command, "\n") || strings.Contains(command, "\r") {
+			return fmt.Errorf("%s runtime.healthCommand contains invalid characters", ManifestFile)
+		}
 	}
 	return nil
 }
 
-func DeploymentAdvice(appName string, manifest Manifest) []string {
+func DeploymentSummary(manifest Manifest) []string {
 	lines := []string{}
-	appRoot := "/var/lib/nova/apps/" + appName
-	if manifest.Static.Root != "" {
-		staticRoot := filepath.ToSlash(filepath.Join(appRoot, filepath.Clean(manifest.Static.Root)))
-		lines = append(lines, "static files: "+staticRoot)
+	if manifest.App != "" {
+		lines = append(lines, "app: "+manifest.App)
 	}
-	if manifest.Backend.Port > 0 {
-		target := fmt.Sprintf("127.0.0.1:%d", manifest.Backend.Port)
-		prefixes := manifest.Backend.APIPrefix
-		if len(prefixes) == 0 {
-			prefixes = []string{"/api/*"}
-		}
-		if manifest.Backend.Health != "" {
-			prefixes = append(prefixes, manifest.Backend.Health)
-		}
-		if manifest.Backend.Ready != "" {
-			prefixes = append(prefixes, manifest.Backend.Ready)
-		}
-		lines = append(lines, "backend proxy: "+strings.Join(prefixes, " ")+" -> "+target)
+	if len(manifest.Artifact.Files) > 0 {
+		lines = append(lines, "artifact files: "+strings.Join(manifest.Artifact.Files, ", "))
 	}
-	if manifest.Static.Root != "" && manifest.Static.SPA {
-		lines = append(lines, "spa fallback: serve index.html for non-file routes")
+	if manifest.Process.Command != "" {
+		lines = append(lines, "process command: "+manifest.Process.Command)
+	}
+	if manifest.Runtime.HealthCommand != "" {
+		lines = append(lines, "health command: "+manifest.Runtime.HealthCommand)
 	}
 	return lines
 }

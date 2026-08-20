@@ -58,42 +58,103 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 
 当目标是让 AI 帮你安装 Nova Run 客户端、安装服务器 Agent，并完成首次连接配置时，使用这段：
 
-```text
+````text
 你正在协助我安装和配置 Nova Run。
 
+Nova Run 项目地址：
+- GitHub: https://github.com/luaxlou/nova-run
+- 客户端安装脚本: https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh
+- 服务器 Agent 安装脚本: https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh
+
+请按下面流程直接执行，除非缺少服务器登录信息或需要我确认安全组/防火墙变更。
+
 请完成这些工作：
-- 在本机安装 `nova` 客户端。
-- 在目标 Linux 服务器上安装 Nova Agent。
-- 确认服务器 `32102/tcp` 可以从本机访问。
-- 获取 Nova Agent Endpoint 和访问令牌。
-- 在本机项目目录中执行 `nova init`，把当前项目绑定到目标 Nova Agent。
-- 用 `nova list` 验证本机客户端已经能连接服务器。
+1. 在本机安装或更新 `nova` 客户端：
+   `curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash`
+2. 确认本机 `nova` 可用：
+   `command -v nova && nova --help`
+3. 在目标 Linux 服务器上安装 Nova Agent。如果我提供了服务器地址 `<server>`，优先使用 SSH 执行：
+   `ssh root@<server> 'curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo env NOVA_AGENT_ENDPOINT=http://<server>:32102 bash'`
+   如果不能 SSH 到 root，请使用我提供的用户或让我提供登录方式。
+4. 确认服务器 Agent 运行：
+   `ssh root@<server> 'systemctl is-active nova.service && systemctl is-enabled nova.service && ss -ltnp | grep 32102'`
+5. 确认本机可以访问 Agent 端口：
+   `curl -i --max-time 10 http://<server>:32102/v1/apps`
+   未带 token 时返回 `401 invalid token` 也代表端口已经打通。
+6. 如果公网访问超时，请协助开放安全组或防火墙入方向 `TCP 32102`。开放前说明来源范围；默认优先只开放我的公网 IP，必要时再临时开放 `0.0.0.0/0`。
+7. 获取访问令牌：
+   `ssh root@<server> 'sudo cat /etc/nova/token'`
+8. 在本机项目目录执行：
+   `nova init`
+   Endpoint 填 `http://<server>:32102`，Token 填上一步读取到的值。
+9. 用下面命令验证：
+   `nova list`
 
 请遵守这些边界：
 - Nova Agent 只安装在 Linux 服务器上。
 - 不要把访问令牌、SSH 密钥或云厂商凭据写入仓库。
-- 如果需要开放云安全组或防火墙，请先说明要开放的端口、协议和来源范围。
+- 不要把 token 打印进最终回复；只说明 token 已配置。
 - 安装完成后，请说明客户端安装位置、Agent 服务状态、Endpoint、配置文件位置和验证结果。
-```
+````
 
 ### 在项目中引入 Nova Run
 
 当 Nova Run 已经安装并且本机客户端已经配置完毕，只需要让 AI 在项目中使用 Nova Run 接管发布、运行、日志和生命周期时，使用这段：
 
-```text
+````text
 你正在协助维护一个已经配置好 Nova Run 的项目。
 
 请假定本机 `nova` 客户端已经安装，且当前项目已经通过 `nova init` 绑定到目标 Nova Agent。
 
+Nova Run 项目地址：
+- GitHub: https://github.com/luaxlou/nova-run
+
 请把 Nova Run 当作这个项目的运行生命周期入口：
-- 先识别项目的构建方式和产物目录。
-- 如果项目还没有清晰的构建产物，请补齐最小必要的构建脚本或说明。
-- 每次完成代码修改后，先运行项目测试和构建。
-- 用 `nova deploy` 读取项目 `nova.yaml`，先执行 `build.commands`，再发布制品。
-- 发布后用 `nova status [app]` 确认运行状态。
-- 需要排查问题时，用 `nova logs [app]` 或 `nova logs [app] -f` 查看日志。
-- 需要控制进程时，用 `nova start [app]`、`nova stop [app]`、`nova restart [app]`，其中 `[app]` 是 `nova.yaml` 中的可选子应用选择器。
-- 需要移除应用时，用 `nova remove [app]`。
+1. 先运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
+2. 识别项目的测试命令、构建命令、运行入口和要发布的制品目录。
+3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
+4. 单应用项目优先使用这个结构：
+   ```yaml
+   app: <app-name>
+   build:
+     commands:
+       - <test-command>
+       - <build-command>
+   artifact:
+     dir: <artifact-dir>
+   ```
+5. 多子应用项目使用这个结构：
+   ```yaml
+   apps:
+     <app-selector>:
+       app: <remote-app-name>
+       build:
+         commands:
+           - <test-command>
+           - <build-command>
+       artifact:
+         dir: <artifact-dir>
+   ```
+6. 如果 `<artifact-dir>` 还不存在，请补齐最小必要的构建脚本，让构建结果稳定输出到该目录。
+7. 确保 artifact 目录中包含可在服务器上启动应用的入口，例如 `run` 脚本或可执行文件。
+8. 完成代码修改后，执行：
+   `nova deploy`
+   多子应用时执行：
+   `nova deploy <app-selector>`
+9. 发布后执行：
+   `nova status`
+   或：
+   `nova status <app-selector>`
+10. 需要看日志时执行：
+   `nova logs`
+   或：
+   `nova logs <app-selector> -f`
+11. 需要控制进程时执行：
+   `nova start [app-selector]`
+   `nova stop [app-selector]`
+   `nova restart [app-selector]`
+12. 需要移除应用时执行：
+   `nova remove [app-selector]`
 
 请遵守这些边界：
 - Nova Run 只负责单机部署、进程生命周期和日志查看。
@@ -101,8 +162,8 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 - 不要把 Nova 访问令牌、服务器私密配置或临时密钥写入仓库。
 - 如果发布失败，按顺序检查：本地构建产物、`nova` 目标配置、Agent 连通性、服务器 systemd 状态和 journald 日志。
 
-执行任务时，请主动完成：代码修改、测试、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
-```
+执行任务时，请主动完成：代码修改、`nova.yaml` 配置、测试、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
+````
 
 ## 管理项目
 

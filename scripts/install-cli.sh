@@ -48,7 +48,7 @@ echo "Platform: ${OS}-${ARCH}"
 echo "Download: ${URL}"
 echo "Target: ${INSTALL_DIR}/nova"
 
-curl --fail --location --show-error --connect-timeout 10 --max-time 300 --retry 2 --progress-bar "$URL" -o "$TMP_FILE"
+curl --fail --location --show-error --connect-timeout 20 --max-time 600 --retry 3 --retry-delay 2 --retry-all-errors --progress-bar "$URL" -o "$TMP_FILE"
 chmod +x "$TMP_FILE"
 
 mkdir -p "$INSTALL_DIR"

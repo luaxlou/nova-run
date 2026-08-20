@@ -14,7 +14,6 @@ const ConfigFile = "nova.yaml"
 type Config struct {
 	App      string         `json:"app,omitempty" yaml:"app,omitempty"`
 	Build    BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
-	Test     BuildConfig    `json:"test,omitempty" yaml:"test,omitempty"`
 	Artifact ArtifactConfig `json:"artifact,omitempty" yaml:"artifact,omitempty"`
 	Apps     map[string]App `json:"apps,omitempty" yaml:"apps,omitempty"`
 }
@@ -22,7 +21,6 @@ type Config struct {
 type App struct {
 	App      string         `json:"app,omitempty" yaml:"app,omitempty"`
 	Build    BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
-	Test     BuildConfig    `json:"test,omitempty" yaml:"test,omitempty"`
 	Artifact ArtifactConfig `json:"artifact,omitempty" yaml:"artifact,omitempty"`
 }
 
@@ -53,8 +51,7 @@ func Load(dir string) (Config, string, error) {
 func Validate(cfg Config) error {
 	hasDefault := strings.TrimSpace(cfg.App) != "" ||
 		strings.TrimSpace(cfg.Artifact.Dir) != "" ||
-		len(cfg.Build.Commands) > 0 ||
-		len(cfg.Test.Commands) > 0
+		len(cfg.Build.Commands) > 0
 	if hasDefault {
 		if _, err := Resolve(cfg, ""); err != nil {
 			return err
@@ -75,7 +72,6 @@ type Target struct {
 	Name     string
 	App      string
 	Build    BuildConfig
-	Test     BuildConfig
 	Artifact ArtifactConfig
 }
 
@@ -84,15 +80,13 @@ func Resolve(cfg Config, selector string) (Target, error) {
 	if selector == "" {
 		hasDefault := strings.TrimSpace(cfg.App) != "" ||
 			strings.TrimSpace(cfg.Artifact.Dir) != "" ||
-			len(cfg.Build.Commands) > 0 ||
-			len(cfg.Test.Commands) > 0
+			len(cfg.Build.Commands) > 0
 		if !hasDefault {
 			return Target{}, fmt.Errorf("%s default app is not configured; choose one of apps", ConfigFile)
 		}
 		return resolveApp(cfg, "", App{
 			App:      cfg.App,
 			Build:    cfg.Build,
-			Test:     cfg.Test,
 			Artifact: cfg.Artifact,
 		})
 	}
@@ -108,7 +102,6 @@ func resolveApp(cfg Config, name string, app App) (Target, error) {
 		Name:     name,
 		App:      firstNonEmpty(app.App, cfg.App),
 		Build:    mergeBuild(cfg.Build, app.Build),
-		Test:     mergeBuild(cfg.Test, app.Test),
 		Artifact: mergeArtifact(cfg.Artifact, app.Artifact),
 	}
 	label := ConfigFile
@@ -122,9 +115,6 @@ func resolveApp(cfg Config, name string, app App) (Target, error) {
 		return Target{}, fmt.Errorf("%s artifact.dir is required", label)
 	}
 	if err := validateCommands(label, "build.commands", target.Build.Commands); err != nil {
-		return Target{}, err
-	}
-	if err := validateCommands(label, "test.commands", target.Test.Commands); err != nil {
 		return Target{}, err
 	}
 	return target, nil

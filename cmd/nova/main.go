@@ -32,8 +32,6 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova build [app]    # 读取当前目录 nova.yaml，执行构建命令
-  nova test [app]     # 读取当前目录 nova.yaml，执行测试命令
   nova deploy [app]   # 读取当前目录 nova.yaml，执行构建并发布
   nova start [app]
   nova stop [app]
@@ -88,16 +86,6 @@ func main() {
 	case "agent":
 		if err := runAgent(rest); err != nil {
 			fmt.Printf("agent failed: %v\n", err)
-			os.Exit(1)
-		}
-	case "build":
-		if err := runConfiguredCommands(ctx, rest, commandKindBuild); err != nil {
-			fmt.Printf("build failed: %v\n", err)
-			os.Exit(1)
-		}
-	case "test":
-		if err := runConfiguredCommands(ctx, rest, commandKindTest); err != nil {
-			fmt.Printf("test failed: %v\n", err)
 			os.Exit(1)
 		}
 	case "deploy":
@@ -222,37 +210,16 @@ func main() {
 	}
 }
 
-type commandKind string
-
-const (
-	commandKindBuild commandKind = "build"
-	commandKindTest  commandKind = "test"
-)
-
-func runConfiguredCommands(ctx context.Context, args []string, kind commandKind) error {
-	target, err := loadTargetFromArgs(args)
-	if err != nil {
-		return err
-	}
-	commands := target.Build.Commands
-	if kind == commandKindTest {
-		commands = target.Test.Commands
-	}
-	if len(commands) == 0 {
-		return fmt.Errorf("no %s commands configured for %s", kind, targetLabel(target))
-	}
-	return runShellCommands(ctx, commands)
-}
-
 func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string) error {
 	target, err := loadTargetFromArgs(args)
 	if err != nil {
 		return err
 	}
-	if len(target.Build.Commands) > 0 {
-		if err := runShellCommands(ctx, target.Build.Commands); err != nil {
-			return err
-		}
+	if len(target.Build.Commands) == 0 {
+		return fmt.Errorf("no build commands configured for %s", targetLabel(target))
+	}
+	if err := runShellCommands(ctx, target.Build.Commands); err != nil {
+		return err
 	}
 	if err := cli.Deploy(ctx, target.App, target.Artifact.Dir); err != nil {
 		return err
@@ -394,7 +361,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "init" || cmd == "target" || cmd == "build" || cmd == "test" {
+	if cmd == "agent" || cmd == "init" || cmd == "target" {
 		return nil
 	}
 	if runtimeConfigReady() {

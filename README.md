@@ -73,11 +73,11 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 - 先识别项目的构建方式和产物目录。
 - 如果项目还没有清晰的构建产物，请补齐最小必要的构建脚本或说明。
 - 每次完成代码修改后，先运行项目测试和构建。
-- 用 `nova build`、`nova test`、`nova deploy` 读取项目 `nova.yaml` 完成构建、测试和发布。
-- 发布后用 `nova status <app>` 确认运行状态。
-- 需要排查问题时，用 `nova logs <app>` 或 `nova logs <app> -f` 查看日志。
+- 用 `nova deploy` 读取项目 `nova.yaml`，先执行 `build.commands`，再发布制品。
+- 发布后用 `nova status [app]` 确认运行状态。
+- 需要排查问题时，用 `nova logs [app]` 或 `nova logs [app] -f` 查看日志。
 - 需要控制进程时，用 `nova start [app]`、`nova stop [app]`、`nova restart [app]`，其中 `[app]` 是 `nova.yaml` 中的可选子应用选择器。
-- 需要移除应用时，用 `nova remove <app>`。
+- 需要移除应用时，用 `nova remove [app]`。
 
 请遵守这些边界：
 - Nova Run 只负责单机部署、进程生命周期和日志查看。
@@ -91,8 +91,6 @@ Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例
 ## 管理项目
 
 ```bash
-nova build [app]
-nova test [app]
 nova deploy
 nova deploy [app]
 nova start [app]
@@ -114,9 +112,6 @@ build:
   commands:
     - npm run build
     - scripts/build-nova-artifact.sh
-test:
-  commands:
-    - npm run test:real-ui
 artifact:
   dir: .nova/artifact
 ```

@@ -46,7 +46,6 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	cfg := Config{
 		App:      "demo",
 		Build:    BuildConfig{Commands: []string{"npm run build"}},
-		Test:     BuildConfig{Commands: []string{"npm test"}},
 		Artifact: ArtifactConfig{Dir: ".nova/default"},
 		Apps: map[string]App{
 			"backend": {
@@ -66,8 +65,5 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	}
 	if target.Artifact.Dir != ".nova/backend" {
 		t.Fatalf("artifact = %q", target.Artifact.Dir)
-	}
-	if target.Test.Commands[0] != "npm test" {
-		t.Fatalf("test commands = %#v", target.Test.Commands)
 	}
 }

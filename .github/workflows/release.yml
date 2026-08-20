@@ -44,10 +44,17 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          set -euo pipefail
           mkdir -p dist
+          if [ "$GOOS" = "linux" ]; then
+            export CGO_ENABLED=0
+          fi
           go build \
+            -trimpath \
+            -ldflags "-s -w" \
             -o dist/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/nova
+          file dist/nova-${{ matrix.goos }}-${{ matrix.goarch }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -141,20 +141,24 @@ Nova Run 项目地址：
 7. 如果应用需要 Nova 接管进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
 8. 完成代码修改后，执行：
    `nova deploy`
-   多子应用时执行：
+   不指定目标时，Nova 默认使用 `apps` 下声明的第一个应用。多子应用也可以显式执行：
    `nova deploy <app-selector>`
+   或部署全部：
+   `nova deploy all`
 9. 发布后执行：
    `nova status`
    或：
    `nova status <app-selector>`
+   或：
+   `nova status all`
 10. 需要看日志时执行：
    `nova logs`
    或：
    `nova logs <app-selector> -f`
 11. 需要控制进程时执行：
-   `nova start [app-selector]`
-   `nova stop [app-selector]`
-   `nova restart [app-selector]`
+   `nova start [app-selector|all]`
+   `nova stop [app-selector|all]`
+   `nova restart [app-selector|all]`
 12. 需要移除应用时执行：
    `nova remove [app-selector]`
 
@@ -171,12 +175,12 @@ Nova Run 项目地址：
 
 ```bash
 nova deploy
-nova deploy [app]
-nova start [app]
-nova stop [app]
-nova restart [app]
-nova status [app]
-nova logs [app] [-f]
+nova deploy [app|all]
+nova start [app|all]
+nova stop [app|all]
+nova restart [app|all]
+nova status [app|all]
+nova logs [app|all] [-f]
 nova list
 nova remove [app]
 ```
@@ -211,7 +215,6 @@ apps:
       command: ./api
       env:
         CONFIG_PATH: ./config.yaml
-      healthCommand: curl -fsS http://127.0.0.1:8080/healthz
   sbom-platform-worker:
     build:
       commands:
@@ -226,7 +229,9 @@ apps:
 
 ```bash
 nova deploy sbom-platform-backend
+nova deploy all
 nova restart sbom-platform-worker
+nova status all
 nova logs sbom-platform-backend -f
 ```
 
@@ -248,8 +253,6 @@ artifact:
     - dist
 process:
   command: ./app
-runtime:
-  healthCommand: curl -fsS http://127.0.0.1:8080/healthz
 ```
 
 部署后 Nova 会提示：
@@ -259,7 +262,6 @@ artifact manifest:
   app: sbom-platform
   artifact files: run, sbom-api, config.yaml, dist
   process command: ./app
-  health command: curl -fsS http://127.0.0.1:8080/healthz
 ```
 
 服务器 Web 入口、静态文件服务、反向代理和 TLS 属于服务器环境配置，不属于 Nova 生命周期模型。

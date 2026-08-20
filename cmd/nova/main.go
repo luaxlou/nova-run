@@ -33,12 +33,12 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova deploy [app]   # 读取当前目录 nova.yaml，执行构建并发布
-  nova start [app]
-  nova stop [app]
-  nova restart [app]
-  nova status [app]
-  nova logs [app] [-f]
+  nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认第一个
+  nova start [app|all]
+  nova stop [app|all]
+  nova restart [app|all]
+  nova status [app|all]
+  nova logs [app|all] [-f]
   nova list
   nova remove [app]
 
@@ -95,69 +95,86 @@ func main() {
 			os.Exit(1)
 		}
 	case "start":
-		target, err := loadTargetFromArgs(rest)
+		targets, err := loadTargetsFromArgs(rest)
 		if err != nil {
 			fmt.Printf("start failed: %v\n", err)
 			os.Exit(1)
 		}
-		if err := cli.Start(ctx, target.App); err != nil {
-			fmt.Printf("start failed: %v\n", err)
-			os.Exit(1)
+		for _, target := range targets {
+			if err := cli.Start(ctx, target.App); err != nil {
+				fmt.Printf("start failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s start command sent\n", target.App)
 		}
-		fmt.Println("start command sent")
 	case "stop":
-		target, err := loadTargetFromArgs(rest)
+		targets, err := loadTargetsFromArgs(rest)
 		if err != nil {
 			fmt.Printf("stop failed: %v\n", err)
 			os.Exit(1)
 		}
-		if err := cli.Stop(ctx, target.App); err != nil {
-			fmt.Printf("stop failed: %v\n", err)
-			os.Exit(1)
+		for _, target := range targets {
+			if err := cli.Stop(ctx, target.App); err != nil {
+				fmt.Printf("stop failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s stop command sent\n", target.App)
 		}
-		fmt.Println("stop command sent")
 	case "restart":
-		target, err := loadTargetFromArgs(rest)
+		targets, err := loadTargetsFromArgs(rest)
 		if err != nil {
 			fmt.Printf("restart failed: %v\n", err)
 			os.Exit(1)
 		}
-		if err := cli.Restart(ctx, target.App); err != nil {
-			fmt.Printf("restart failed: %v\n", err)
-			os.Exit(1)
+		for _, target := range targets {
+			if err := cli.Restart(ctx, target.App); err != nil {
+				fmt.Printf("restart failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("%s restart command sent\n", target.App)
 		}
-		fmt.Println("restart command sent")
 	case "status":
-		target, err := loadTargetFromArgs(rest)
+		targets, err := loadTargetsFromArgs(rest)
 		if err != nil {
 			fmt.Printf("status failed: %v\n", err)
 			os.Exit(1)
 		}
-		status, err := cli.Status(ctx, target.App)
-		if err != nil {
-			fmt.Printf("status failed: %v\n", err)
-			os.Exit(1)
+		for _, target := range targets {
+			status, err := cli.Status(ctx, target.App)
+			if err != nil {
+				fmt.Printf("status failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Println(status)
 		}
-		fmt.Println(status)
 	case "logs":
-		target, follow, err := loadLogTargetFromArgs(rest)
+		targets, follow, err := loadLogTargetsFromArgs(rest)
 		if err != nil {
 			fmt.Printf("logs failed: %v\n", err)
 			os.Exit(1)
 		}
+		if follow && len(targets) > 1 {
+			fmt.Println("logs failed: logs all -f is not supported; choose one app")
+			os.Exit(1)
+		}
 		if follow {
-			if err := cli.LogsStream(ctx, target.App, os.Stdout); err != nil {
+			if err := cli.LogsStream(ctx, targets[0].App, os.Stdout); err != nil {
 				fmt.Printf("logs failed: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
-			stream, err := cli.Logs(ctx, target.App, follow)
-			if err != nil {
-				fmt.Printf("logs failed: %v\n", err)
-				os.Exit(1)
-			}
-			for _, line := range stream {
-				fmt.Println(line)
+			for _, target := range targets {
+				if len(targets) > 1 {
+					fmt.Printf("==> %s <==\n", target.App)
+				}
+				stream, err := cli.Logs(ctx, target.App, follow)
+				if err != nil {
+					fmt.Printf("logs failed: %v\n", err)
+					os.Exit(1)
+				}
+				for _, line := range stream {
+					fmt.Println(line)
+				}
 			}
 		}
 	case "list":
@@ -212,10 +229,19 @@ func main() {
 }
 
 func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string) error {
-	target, err := loadTargetFromArgs(args)
+	targets, err := loadTargetsFromArgs(args)
 	if err != nil {
 		return err
 	}
+	for _, target := range targets {
+		if err := deployTarget(ctx, cli, target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func deployTarget(ctx context.Context, cli *client.Client, target project.Target) error {
 	if len(target.Build.Commands) == 0 {
 		return fmt.Errorf("no build commands configured for %s", targetLabel(target))
 	}
@@ -300,8 +326,19 @@ func shellQuote(value string) string {
 }
 
 func loadTargetFromArgs(args []string) (project.Target, error) {
+	targets, err := loadTargetsFromArgs(args)
+	if err != nil {
+		return project.Target{}, err
+	}
+	if len(targets) != 1 {
+		return project.Target{}, fmt.Errorf("expected exactly one configured app selector")
+	}
+	return targets[0], nil
+}
+
+func loadTargetsFromArgs(args []string) ([]project.Target, error) {
 	if len(args) > 1 {
-		return project.Target{}, fmt.Errorf("expected zero or one configured app selector")
+		return nil, fmt.Errorf("expected zero or one configured app selector")
 	}
 	selector := ""
 	if len(args) == 1 {
@@ -309,20 +346,30 @@ func loadTargetFromArgs(args []string) (project.Target, error) {
 	}
 	cfg, path, err := project.Load(".")
 	if err != nil {
-		return project.Target{}, err
+		return nil, err
 	}
 	fmt.Printf("project config: %s\n", path)
+	if selector == "all" {
+		targets, err := project.ResolveAll(cfg)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("project app: all")
+		return targets, nil
+	}
 	target, err := project.Resolve(cfg, selector)
 	if err != nil {
-		return project.Target{}, err
+		return nil, err
 	}
-	if selector != "" {
+	if target.Name != "" {
+		fmt.Printf("project app: %s\n", target.Name)
+	} else if selector != "" {
 		fmt.Printf("project app: %s\n", selector)
 	}
-	return target, nil
+	return []project.Target{target}, nil
 }
 
-func loadLogTargetFromArgs(args []string) (project.Target, bool, error) {
+func loadLogTargetsFromArgs(args []string) ([]project.Target, bool, error) {
 	follow := false
 	selector := ""
 	for _, arg := range args {
@@ -331,15 +378,15 @@ func loadLogTargetFromArgs(args []string) (project.Target, bool, error) {
 			continue
 		}
 		if strings.HasPrefix(arg, "-") {
-			return project.Target{}, false, fmt.Errorf("unknown logs argument: %s", arg)
+			return nil, false, fmt.Errorf("unknown logs argument: %s", arg)
 		}
 		if selector != "" {
-			return project.Target{}, false, fmt.Errorf("expected at most one configured app selector")
+			return nil, false, fmt.Errorf("expected at most one configured app selector")
 		}
 		selector = arg
 	}
-	target, err := loadTargetFromArgs(optionalArg(selector))
-	return target, follow, err
+	targets, err := loadTargetsFromArgs(optionalArg(selector))
+	return targets, follow, err
 }
 
 func optionalArg(value string) []string {

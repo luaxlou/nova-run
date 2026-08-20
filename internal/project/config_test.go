@@ -101,3 +101,61 @@ func TestResolveSubAppDefaultsAppNameToSelector(t *testing.T) {
 		t.Fatalf("app = %q", target.App)
 	}
 }
+
+func TestResolveDefaultsToFirstDeclaredApp(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte(`apps:
+  sbom-platform:
+    build:
+      commands:
+        - scripts/build-platform.sh
+    artifacts:
+      - backend/dist/platform
+    service:
+      command: ./api
+  sbom-platform-api:
+    build:
+      commands:
+        - scripts/build-api.sh
+    artifacts:
+      - backend/dist/api
+    service:
+      command: ./api
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := Resolve(cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Name != "sbom-platform" {
+		t.Fatalf("default target = %q", target.Name)
+	}
+
+	targets, err := ResolveAll(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := []string{targets[0].Name, targets[1].Name}; !slices.Equal(got, []string{"sbom-platform", "sbom-platform-api"}) {
+		t.Fatalf("targets = %#v", got)
+	}
+}
+
+func TestValidateRejectsReservedAllApp(t *testing.T) {
+	err := Validate(Config{
+		Apps: map[string]App{
+			"all": {
+				Build:     BuildConfig{Commands: []string{"scripts/build.sh"}},
+				Artifacts: []string{"dist/app"},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected reserved all app error")
+	}
+}

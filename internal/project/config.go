@@ -17,6 +17,7 @@ type Config struct {
 	Artifacts []string       `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig  `json:"service,omitempty" yaml:"service,omitempty"`
 	Apps      map[string]App `json:"apps,omitempty" yaml:"apps,omitempty"`
+	AppOrder  []string       `json:"-" yaml:"-"`
 }
 
 type App struct {
@@ -46,10 +47,42 @@ func Load(dir string) (Config, string, error) {
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
 		return Config{}, "", fmt.Errorf("parse %s: %w", ConfigFile, err)
 	}
+	order, err := readAppOrder(raw)
+	if err != nil {
+		return Config{}, "", err
+	}
+	cfg.AppOrder = order
 	if err := Validate(cfg); err != nil {
 		return Config{}, "", err
 	}
 	return cfg, path, nil
+}
+
+func readAppOrder(raw []byte) ([]string, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", ConfigFile, err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	doc := root.Content[0]
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		key := doc.Content[i]
+		value := doc.Content[i+1]
+		if key.Value != "apps" || value.Kind != yaml.MappingNode {
+			continue
+		}
+		order := []string{}
+		for j := 0; j+1 < len(value.Content); j += 2 {
+			name := strings.TrimSpace(value.Content[j].Value)
+			if name != "" {
+				order = append(order, name)
+			}
+		}
+		return order, nil
+	}
+	return nil, nil
 }
 
 func Validate(cfg Config) error {
@@ -66,6 +99,9 @@ func Validate(cfg Config) error {
 		return fmt.Errorf("%s app or apps is required", ConfigFile)
 	}
 	for name, app := range cfg.Apps {
+		if strings.TrimSpace(name) == "all" {
+			return fmt.Errorf("%s apps.all is reserved for targeting all apps", ConfigFile)
+		}
 		if _, err := resolveApp(cfg, name, app); err != nil {
 			return err
 		}
@@ -88,21 +124,72 @@ func Resolve(cfg Config, selector string) (Target, error) {
 			len(cfg.Artifacts) > 0 ||
 			strings.TrimSpace(cfg.Service.Command) != "" ||
 			len(cfg.Build.Commands) > 0
-		if !hasDefault {
-			return Target{}, fmt.Errorf("%s default app is not configured; choose one of apps", ConfigFile)
+		if hasDefault {
+			return resolveApp(cfg, "", App{
+				App:       cfg.App,
+				Build:     cfg.Build,
+				Artifacts: cfg.Artifacts,
+				Service:   cfg.Service,
+			})
 		}
-		return resolveApp(cfg, "", App{
-			App:       cfg.App,
-			Build:     cfg.Build,
-			Artifacts: cfg.Artifacts,
-			Service:   cfg.Service,
-		})
+		name, app, ok := firstConfiguredApp(cfg)
+		if !ok {
+			return Target{}, fmt.Errorf("%s default app is not configured", ConfigFile)
+		}
+		return resolveApp(cfg, name, app)
 	}
 	app, ok := cfg.Apps[selector]
 	if !ok {
 		return Target{}, fmt.Errorf("%s app %q is not configured", ConfigFile, selector)
 	}
 	return resolveApp(cfg, selector, app)
+}
+
+func ResolveAll(cfg Config) ([]Target, error) {
+	if len(cfg.Apps) == 0 {
+		target, err := Resolve(cfg, "")
+		if err != nil {
+			return nil, err
+		}
+		return []Target{target}, nil
+	}
+	names := orderedAppNames(cfg)
+	targets := make([]Target, 0, len(names))
+	for _, name := range names {
+		target, err := Resolve(cfg, name)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func firstConfiguredApp(cfg Config) (string, App, bool) {
+	for _, name := range orderedAppNames(cfg) {
+		app, ok := cfg.Apps[name]
+		if ok {
+			return name, app, true
+		}
+	}
+	return "", App{}, false
+}
+
+func orderedAppNames(cfg Config) []string {
+	names := []string{}
+	seen := map[string]bool{}
+	for _, name := range cfg.AppOrder {
+		if _, ok := cfg.Apps[name]; ok && !seen[name] {
+			names = append(names, name)
+			seen[name] = true
+		}
+	}
+	for name := range cfg.Apps {
+		if !seen[name] {
+			names = append(names, name)
+		}
+	}
+	return names
 }
 
 func resolveApp(cfg Config, name string, app App) (Target, error) {

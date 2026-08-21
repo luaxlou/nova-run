@@ -19,8 +19,9 @@ import (
 )
 
 type Server struct {
-	Token   string
-	AppRoot string
+	Token          string
+	AppRoot        string
+	restartService func(string) error
 }
 
 func NewServer(appRoot, token string) *Server {
@@ -29,6 +30,14 @@ func NewServer(appRoot, token string) *Server {
 		log.Printf("nova app service template setup failed: %v", err)
 	}
 	return &Server{Token: token, AppRoot: cleanRoot}
+}
+
+func (s *Server) restart(name string) error {
+	if s.restartService != nil {
+		return s.restartService(name)
+	}
+	ctrl := runtime.Controller{}
+	return ctrl.Restart(name)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -303,6 +312,12 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name strin
 	if err := deploy.SaveMetadata(appDir, deploy.Metadata{Version: version}); err != nil {
 		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if artifact.HasRunBinary(appDir) {
+		if err := s.restart(name); err != nil {
+			api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 	}
 	api.RenderJSON(w, api.Response{
 		Success: true,

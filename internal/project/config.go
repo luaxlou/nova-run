@@ -13,6 +13,7 @@ const ConfigFile = "nova.yaml"
 
 type Config struct {
 	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
+	Run       string         `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string       `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig  `json:"service,omitempty" yaml:"service,omitempty"`
@@ -22,6 +23,7 @@ type Config struct {
 
 type App struct {
 	App       string        `json:"app,omitempty" yaml:"app,omitempty"`
+	Run       string        `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig   `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string      `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig `json:"service,omitempty" yaml:"service,omitempty"`
@@ -38,6 +40,28 @@ type ServiceConfig struct {
 }
 
 func Load(dir string) (Config, string, error) {
+	cfg, path, err := loadConfig(dir)
+	if err != nil {
+		return Config{}, "", err
+	}
+	if err := Validate(cfg); err != nil {
+		return Config{}, "", err
+	}
+	return cfg, path, nil
+}
+
+func LoadForRun(dir string) (Config, string, error) {
+	cfg, path, err := loadConfig(dir)
+	if err != nil {
+		return Config{}, "", err
+	}
+	if err := validateRunSyntax(cfg); err != nil {
+		return Config{}, "", err
+	}
+	return cfg, path, nil
+}
+
+func loadConfig(dir string) (Config, string, error) {
 	path := filepath.Join(dir, ConfigFile)
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -52,10 +76,26 @@ func Load(dir string) (Config, string, error) {
 		return Config{}, "", err
 	}
 	cfg.AppOrder = order
-	if err := Validate(cfg); err != nil {
-		return Config{}, "", err
-	}
 	return cfg, path, nil
+}
+
+func validateRunSyntax(cfg Config) error {
+	if err := validateRunValue(ConfigFile+" run", cfg.Run); err != nil {
+		return err
+	}
+	for name, app := range cfg.Apps {
+		if err := validateRunValue(ConfigFile+" apps."+name+" run", app.Run); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateRunValue(field, value string) error {
+	if strings.Contains(value, "\x00") || strings.Contains(value, "\n") || strings.Contains(value, "\r") {
+		return fmt.Errorf("%s contains invalid characters", field)
+	}
+	return nil
 }
 
 func readAppOrder(raw []byte) ([]string, error) {
@@ -115,6 +155,80 @@ type Target struct {
 	Build     BuildConfig
 	Artifacts []string
 	Service   ServiceConfig
+}
+
+type RunTarget struct {
+	Name    string
+	Command string
+}
+
+func ResolveRun(cfg Config, selector string) (RunTarget, error) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		if hasDefaultProjectConfig(cfg) {
+			return resolveRunApp(cfg, "", App{})
+		}
+		name, app, ok := firstConfiguredApp(cfg)
+		if !ok {
+			return RunTarget{}, fmt.Errorf("%s default app is not configured", ConfigFile)
+		}
+		return resolveRunApp(cfg, name, app)
+	}
+	app, ok := cfg.Apps[selector]
+	if !ok {
+		return RunTarget{}, fmt.Errorf("%s app %q is not configured", ConfigFile, selector)
+	}
+	return resolveRunApp(cfg, selector, app)
+}
+
+func ResolveAllRuns(cfg Config) ([]RunTarget, error) {
+	if len(cfg.Apps) == 0 {
+		target, err := ResolveRun(cfg, "")
+		if err != nil {
+			return nil, err
+		}
+		return []RunTarget{target}, nil
+	}
+
+	targets := make([]RunTarget, 0, len(cfg.Apps))
+	for _, name := range orderedAppNames(cfg) {
+		target, err := ResolveRun(cfg, name)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func resolveRunApp(cfg Config, name string, app App) (RunTarget, error) {
+	field := ConfigFile + " run"
+	targetName := strings.TrimSpace(cfg.App)
+	if targetName == "" {
+		targetName = "default"
+	}
+	if name != "" {
+		field = ConfigFile + " apps." + name + " run"
+		targetName = name
+	}
+	command := strings.TrimSpace(firstNonEmpty(app.Run, cfg.Run))
+	if command == "" {
+		return RunTarget{}, fmt.Errorf("%s is required", field)
+	}
+	if err := validateRunValue(field, command); err != nil {
+		return RunTarget{}, err
+	}
+	return RunTarget{Name: targetName, Command: command}, nil
+}
+
+func hasDefaultProjectConfig(cfg Config) bool {
+	return strings.TrimSpace(cfg.App) != "" ||
+		cfg.Run != "" ||
+		len(cfg.Artifacts) > 0 ||
+		strings.TrimSpace(cfg.Service.Command) != "" ||
+		len(cfg.Service.Env) > 0 ||
+		strings.TrimSpace(cfg.Service.HealthCommand) != "" ||
+		len(cfg.Build.Commands) > 0
 }
 
 func Resolve(cfg Config, selector string) (Target, error) {

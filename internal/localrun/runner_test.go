@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -71,13 +76,14 @@ func TestRunAllStopsRemainingProcessAfterFirstExit(t *testing.T) {
 
 func TestRunCancellationStopsProcessAndReturnsInterruptCode(t *testing.T) {
 	var stdout lockedBuffer
+	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, []Command{{
 			Name:         "api",
-			ShellCommand: `trap 'printf stopped; exit 0' TERM; sleep 100 & child=$!; printf ready; wait "$child"`,
-		}}, t.TempDir(), Streams{Stdout: &stdout, Stderr: &stdout}, 500*time.Millisecond)
+			ShellCommand: `trap 'printf stopped; exit 0' INT; sleep 100 & child=$!; printf ready; wait "$child"`,
+		}}, dir, Streams{Stdout: &stdout, Stderr: &stdout}, 500*time.Millisecond)
 	}()
 
 	waitForOutput(t, &stdout, "ready")
@@ -99,13 +105,14 @@ func TestRunCancellationStopsProcessAndReturnsInterruptCode(t *testing.T) {
 
 func TestRunForceKillsProcessThatIgnoresTermination(t *testing.T) {
 	var stdout lockedBuffer
+	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		done <- Run(ctx, []Command{{
 			Name:         "api",
 			ShellCommand: `trap '' TERM; printf ready; while :; do sleep 1; done`,
-		}}, t.TempDir(), Streams{Stdout: &stdout, Stderr: &stdout}, 50*time.Millisecond)
+		}}, dir, Streams{Stdout: &stdout, Stderr: &stdout}, 50*time.Millisecond)
 	}()
 
 	waitForOutput(t, &stdout, "ready")
@@ -124,6 +131,102 @@ func TestRunForceKillsProcessThatIgnoresTermination(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Run did not force-kill the process")
 	}
+}
+
+func TestRunCleansDescendantAfterShellLeaderExits(t *testing.T) {
+	dir := t.TempDir()
+	pidPath := filepath.Join(dir, "child.pid")
+	command := fmt.Sprintf("sleep 100 & echo $! > %s; exit 0", pidPath)
+	devNull, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer devNull.Close()
+	err = Run(context.Background(), []Command{{Name: "api", ShellCommand: command}}, dir, Streams{
+		Stdout: devNull,
+		Stderr: devNull,
+	}, 200*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawPID, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(rawPID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.Kill(pid, syscall.SIGKILL) }()
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for processExists(pid) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if processExists(pid) {
+		t.Fatalf("background descendant %d survived nova run", pid)
+	}
+}
+
+func TestRunForwardsIncomingUnixSignalAndUsesConventionalExitCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		signal     syscall.Signal
+		wantOutput string
+		wantCode   int
+	}{
+		{name: "interrupt", signal: syscall.SIGINT, wantOutput: "got-int", wantCode: 130},
+		{name: "terminate", signal: syscall.SIGTERM, wantOutput: "got-term", wantCode: 143},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout lockedBuffer
+			dir := t.TempDir()
+			done := make(chan error, 1)
+			go func() {
+				done <- Run(context.Background(), []Command{{
+					Name: "api",
+					ShellCommand: `trap 'printf got-int; exit 0' INT; trap 'printf got-term; exit 0' TERM; ` +
+						`sleep 100 & child=$!; printf ready; wait "$child"`,
+				}}, dir, Streams{Stdout: &stdout, Stderr: &stdout}, 500*time.Millisecond)
+			}()
+
+			waitForOutput(t, &stdout, "ready")
+			if err := syscall.Kill(os.Getpid(), test.signal); err != nil {
+				t.Fatal(err)
+			}
+
+			select {
+			case err := <-done:
+				var exitErr *ExitError
+				if !errors.As(err, &exitErr) || exitErr.ExitCode() != test.wantCode {
+					t.Fatalf("err = %#v, want code %d", err, test.wantCode)
+				}
+				output := stdout.String()
+				if !strings.Contains(output, test.wantOutput) {
+					t.Fatalf("output %q does not contain %q", output, test.wantOutput)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("Run did not handle incoming signal")
+			}
+		})
+	}
+}
+
+func TestRunPreservesSignalTerminatedCommandExitCode(t *testing.T) {
+	err := Run(context.Background(), []Command{{
+		Name: "api", ShellCommand: "kill -TERM $$",
+	}}, t.TempDir(), Streams{Stdout: &lockedBuffer{}, Stderr: &lockedBuffer{}}, 100*time.Millisecond)
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 143 {
+		t.Fatalf("err = %#v, want code 143", err)
+	}
+}
+
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
 }
 
 func waitForOutput(t *testing.T, output *lockedBuffer, want string) {

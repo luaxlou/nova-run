@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
@@ -54,10 +55,11 @@ func Run(ctx context.Context, commands []Command, dir string, streams Streams, g
 		return err
 	}
 
-	runCtx, stopSignals := signal.NotifyContext(ctx, terminationSignals()...)
-	defer stopSignals()
-	if runCtx.Err() != nil {
-		return interruptedError(runCtx.Err())
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, terminationSignals()...)
+	defer signal.Stop(signals)
+	if ctx.Err() != nil {
+		return interruptedError(ctx.Err())
 	}
 
 	results := make(chan processResult, len(commands))
@@ -76,7 +78,7 @@ func Run(ctx context.Context, commands []Command, dir string, streams Streams, g
 			fmt.Fprintf(streams.Stdout, "[%s] $ %s\n", spec.Name, spec.ShellCommand)
 		}
 		if err := cmd.Start(); err != nil {
-			cleanupErr := stopAndReap(children, finished[:len(children)], results, gracePeriod)
+			cleanupErr := stopAndReap(children, finished[:len(children)], results, defaultTerminationSignal(), gracePeriod)
 			startErr := fmt.Errorf("%s command %q failed to start: %w", spec.Name, spec.ShellCommand, err)
 			return joinPrimary(startErr, cleanupErr)
 		}
@@ -89,11 +91,17 @@ func Run(ctx context.Context, commands []Command, dir string, streams Streams, g
 	select {
 	case result := <-results:
 		finished[result.index] = true
+		if ctx.Err() != nil {
+			return joinPrimary(interruptedError(ctx.Err()), stopAndReap(children, finished, results, contextCancellationSignal(), gracePeriod))
+		}
 		primary := commandResult(commands[result.index], result.err)
-		return joinPrimary(primary, stopAndReap(children, finished, results, gracePeriod))
-	case <-runCtx.Done():
-		primary := interruptedError(runCtx.Err())
-		return joinPrimary(primary, stopAndReap(children, finished, results, gracePeriod))
+		return joinPrimary(primary, stopAndReap(children, finished, results, defaultTerminationSignal(), gracePeriod))
+	case <-ctx.Done():
+		primary := interruptedError(ctx.Err())
+		return joinPrimary(primary, stopAndReap(children, finished, results, contextCancellationSignal(), gracePeriod))
+	case receivedSignal := <-signals:
+		primary := receivedSignalError(receivedSignal)
+		return joinPrimary(primary, stopAndReap(children, finished, results, receivedSignal, gracePeriod))
 	}
 }
 
@@ -127,10 +135,18 @@ func commandResult(command Command, err error) error {
 	}
 	code := 1
 	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() >= 0 {
-		code = exitErr.ExitCode()
+	if errors.As(err, &exitErr) {
+		code = processExitCode(exitErr)
 	}
 	return &ExitError{Name: command.Name, Command: command.ShellCommand, Code: code, Err: err}
+}
+
+func receivedSignalError(receivedSignal os.Signal) error {
+	return &ExitError{
+		Name: "local run interrupted",
+		Code: signalExitCode(receivedSignal),
+		Err:  fmt.Errorf("received %s", receivedSignal),
+	}
 }
 
 func interruptedError(err error) error {
@@ -140,26 +156,36 @@ func interruptedError(err error) error {
 	return &ExitError{Name: "local run interrupted", Code: 130, Err: err}
 }
 
-func stopAndReap(children []*exec.Cmd, finished []bool, results <-chan processResult, gracePeriod time.Duration) error {
+func stopAndReap(children []*exec.Cmd, finished []bool, results <-chan processResult, stopSignal os.Signal, gracePeriod time.Duration) error {
 	remaining := 0
 	var cleanupErrors []error
 	for index, child := range children {
-		if finished[index] {
-			continue
+		if !finished[index] {
+			remaining++
 		}
-		remaining++
-		if err := terminateProcess(child); err != nil {
-			cleanupErrors = append(cleanupErrors, fmt.Errorf("terminate process %d: %w", child.Process.Pid, err))
+		if err := signalProcessGroup(child, stopSignal); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("signal process group %d: %w", child.Process.Pid, err))
 		}
-	}
-	if remaining == 0 {
-		return errors.Join(cleanupErrors...)
 	}
 
 	timer := time.NewTimer(gracePeriod)
 	defer timer.Stop()
-	forced := false
-	for remaining > 0 {
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		groupsAlive := false
+		for _, child := range children {
+			alive, err := processGroupAlive(child)
+			if err != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect process group %d: %w", child.Process.Pid, err))
+				continue
+			}
+			groupsAlive = groupsAlive || alive
+		}
+		if remaining == 0 && !groupsAlive {
+			return errors.Join(cleanupErrors...)
+		}
+
 		select {
 		case result := <-results:
 			if result.index >= len(finished) || finished[result.index] {
@@ -168,21 +194,23 @@ func stopAndReap(children []*exec.Cmd, finished []bool, results <-chan processRe
 			finished[result.index] = true
 			remaining--
 		case <-timer.C:
-			if forced {
-				continue
-			}
-			forced = true
-			for index, child := range children {
-				if finished[index] {
-					continue
-				}
-				if err := killProcess(child); err != nil {
+			for _, child := range children {
+				if err := killProcessGroup(child); err != nil {
 					cleanupErrors = append(cleanupErrors, fmt.Errorf("kill process %d: %w", child.Process.Pid, err))
 				}
 			}
+			for remaining > 0 {
+				result := <-results
+				if result.index >= len(finished) || finished[result.index] {
+					continue
+				}
+				finished[result.index] = true
+				remaining--
+			}
+			return errors.Join(cleanupErrors...)
+		case <-ticker.C:
 		}
 	}
-	return errors.Join(cleanupErrors...)
 }
 
 func joinPrimary(primary, cleanup error) error {

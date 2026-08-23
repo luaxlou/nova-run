@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/client"
+	"github.com/luaxlou/glow-ops/internal/localrun"
 	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
@@ -33,6 +35,7 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
+  nova run [app|all]      # 读取当前目录 nova.yaml，在前台运行本地开发命令
   nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认第一个
   nova start [app|all]
   nova stop [app|all]
@@ -56,6 +59,18 @@ func main() {
 		usage()
 		return
 	}
+	if len(args) >= 2 && args[1] == "run" {
+		err := runConfiguredLocal(context.Background(), ".", args[2:], localrun.Streams{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "run failed: %v\n", err)
+			os.Exit(localRunExitCode(err))
+		}
+		return
+	}
 	if len(args) >= 2 {
 		if err := autoBootstrapRuntimeConfig(args[1]); err != nil {
 			fmt.Printf("bootstrap failed: %v\n", err)
@@ -72,10 +87,10 @@ func main() {
 		return
 	}
 
-	ctx := context.Background()
-	cli := client.NewClient()
 	cmd := args[1]
 	rest := args[2:]
+	ctx := context.Background()
+	cli := client.NewClient()
 
 	switch cmd {
 	case "init":
@@ -239,6 +254,49 @@ func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string)
 		}
 	}
 	return nil
+}
+
+func runConfiguredLocal(ctx context.Context, dir string, args []string, streams localrun.Streams) error {
+	if len(args) > 1 {
+		return fmt.Errorf("expected zero or one configured app selector")
+	}
+	cfg, path, err := project.LoadForRun(dir)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(streams.Stdout, "project config: %s\n", path)
+
+	selector := ""
+	if len(args) == 1 {
+		selector = args[0]
+	}
+	var targets []project.RunTarget
+	if selector == "all" {
+		targets, err = project.ResolveAllRuns(cfg)
+	} else {
+		target, resolveErr := project.ResolveRun(cfg, selector)
+		if resolveErr != nil {
+			return resolveErr
+		}
+		targets = []project.RunTarget{target}
+	}
+	if err != nil {
+		return err
+	}
+
+	commands := make([]localrun.Command, 0, len(targets))
+	for _, target := range targets {
+		commands = append(commands, localrun.Command{Name: target.Name, ShellCommand: target.Command})
+	}
+	return localrun.Run(ctx, commands, filepath.Dir(path), streams, 3*time.Second)
+}
+
+func localRunExitCode(err error) int {
+	var exitCoder interface{ ExitCode() int }
+	if errors.As(err, &exitCoder) && exitCoder.ExitCode() > 0 {
+		return exitCoder.ExitCode()
+	}
+	return 1
 }
 
 func deployTarget(ctx context.Context, cli *client.Client, target project.Target) error {
@@ -572,7 +630,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "init" || cmd == "target" {
+	if cmd == "agent" || cmd == "init" || cmd == "target" || cmd == "run" {
 		return nil
 	}
 	if runtimeConfigReady() {

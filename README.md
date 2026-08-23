@@ -110,12 +110,13 @@ Nova Run 项目地址：
 - GitHub: https://github.com/luaxlou/nova-run
 
 请把 Nova Run 当作这个项目的运行生命周期入口：
-1. 先运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
+1. 本地开发使用 `nova run`，不需要连接 Nova Agent；发布前再运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
 2. 识别项目的构建命令、运行入口和要发布的制品路径。
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
    ```yaml
    app: <app-name>
+   run: <local-development-command>
    build:
      commands:
        - <build-command>
@@ -128,6 +129,7 @@ Nova Run 项目地址：
    ```yaml
    apps:
      <app-name>:
+       run: <local-development-command>
        build:
          commands:
            - <build-command>
@@ -138,7 +140,7 @@ Nova Run 项目地址：
    ```
    `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
 6. 如果 `<artifact-path>` 还不存在，请补齐最小必要的构建命令，让构建结果稳定输出到该路径。
-7. 如果应用需要 Nova 接管进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
+7. `run` 是本地开发命令，`service.command` 是服务器生产运行命令，两者互不复用。如果应用需要 Nova 接管远端进程生命周期，请声明 `service.command`；未声明时 Nova 按静态制品发布，不注册服务。
 8. 完成代码修改并提交 Git 后，执行：
    `nova deploy`
    不指定目标时，Nova 默认使用 `apps` 下声明的第一个应用。多子应用也可以显式执行：
@@ -172,9 +174,44 @@ Nova Run 项目地址：
 执行任务时，请主动完成：代码修改、`nova.yaml` 配置、测试、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
 ````
 
+## 本地开发
+
+在 `nova.yaml` 中直接配置本地运行命令：
+
+```yaml
+run: go run ./cmd/api
+```
+
+然后在项目前台运行：
+
+```bash
+nova run
+```
+
+`nova run` 不依赖 `nova init`、Nova Agent Endpoint 或访问令牌。它通过 `sh -lc` 在 `nova.yaml` 所在目录执行命令，继承当前环境，并把输入输出直接连接到当前终端；按 `Ctrl+C` 会终止本地进程。
+
+多应用项目可以分别配置：
+
+```yaml
+apps:
+  api:
+    run: go run ./cmd/api
+  web:
+    run: npm run dev
+```
+
+```bash
+nova run api
+nova run all
+```
+
+`nova run all` 并发启动全部应用；任一进程退出时，Nova 会清理其余本地进程。`run` 只用于本地开发，不会写入部署制品，也不会替代远端的 `service.command`。
+
 ## 管理项目
 
 ```bash
+nova run
+nova run [app|all]
 nova deploy
 nova deploy [app|all]
 nova start [app|all]
@@ -192,6 +229,7 @@ nova remove [app]
 
 ```yaml
 app: sbom-platform
+run: go run ./cmd/app
 build:
   commands:
     - npm run build
@@ -207,6 +245,7 @@ service:
 ```yaml
 apps:
   sbom-platform-backend:
+    run: go run ./cmd/api
     build:
       commands:
         - scripts/build-backend-artifact.sh
@@ -217,6 +256,7 @@ apps:
       env:
         CONFIG_PATH: ./config.yaml
   sbom-platform-worker:
+    run: go run ./cmd/worker
     build:
       commands:
         - scripts/build-worker-artifact.sh

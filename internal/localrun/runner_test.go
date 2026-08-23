@@ -224,6 +224,30 @@ func TestRunPreservesSignalTerminatedCommandExitCode(t *testing.T) {
 	}
 }
 
+func TestRunPrioritizesQueuedSignalOverChildResult(t *testing.T) {
+	signals := make(chan os.Signal, 1)
+	signals <- syscall.SIGINT
+	err := runWithSignals(context.Background(), []Command{{
+		Name: "api", ShellCommand: "exit 7",
+	}}, t.TempDir(), Streams{Stdout: &lockedBuffer{}, Stderr: &lockedBuffer{}}, 100*time.Millisecond, signals)
+
+	var exitErr *ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 130 {
+		t.Fatalf("err = %#v, want queued SIGINT code 130", err)
+	}
+}
+
+func TestReapAfterKillReturnsWhenLeaderCannotBeReaped(t *testing.T) {
+	started := time.Now()
+	err := reapAfterKill(make(chan processResult), make([]bool, 1), 1, 20*time.Millisecond)
+	if err == nil || !strings.Contains(err.Error(), "timed out waiting for 1 local process") {
+		t.Fatalf("err = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 200*time.Millisecond {
+		t.Fatalf("post-kill reap was not bounded: %s", elapsed)
+	}
+}
+
 func processExists(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || errors.Is(err, syscall.EPERM)

@@ -51,13 +51,16 @@ type processResult struct {
 }
 
 func Run(ctx context.Context, commands []Command, dir string, streams Streams, gracePeriod time.Duration) error {
-	if err := validateInputs(commands, dir, streams, gracePeriod); err != nil {
-		return err
-	}
-
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, terminationSignals()...)
 	defer signal.Stop(signals)
+	return runWithSignals(ctx, commands, dir, streams, gracePeriod, signals)
+}
+
+func runWithSignals(ctx context.Context, commands []Command, dir string, streams Streams, gracePeriod time.Duration, signals <-chan os.Signal) error {
+	if err := validateInputs(commands, dir, streams, gracePeriod); err != nil {
+		return err
+	}
 	if ctx.Err() != nil {
 		return interruptedError(ctx.Err())
 	}
@@ -91,6 +94,9 @@ func Run(ctx context.Context, commands []Command, dir string, streams Streams, g
 	select {
 	case result := <-results:
 		finished[result.index] = true
+		if receivedSignal, ok := pendingSignal(signals); ok {
+			return joinPrimary(receivedSignalError(receivedSignal), stopAndReap(children, finished, results, receivedSignal, gracePeriod))
+		}
 		if ctx.Err() != nil {
 			return joinPrimary(interruptedError(ctx.Err()), stopAndReap(children, finished, results, contextCancellationSignal(), gracePeriod))
 		}
@@ -102,6 +108,15 @@ func Run(ctx context.Context, commands []Command, dir string, streams Streams, g
 	case receivedSignal := <-signals:
 		primary := receivedSignalError(receivedSignal)
 		return joinPrimary(primary, stopAndReap(children, finished, results, receivedSignal, gracePeriod))
+	}
+}
+
+func pendingSignal(signals <-chan os.Signal) (os.Signal, bool) {
+	select {
+	case receivedSignal := <-signals:
+		return receivedSignal, true
+	default:
+		return nil, false
 	}
 }
 
@@ -199,18 +214,31 @@ func stopAndReap(children []*exec.Cmd, finished []bool, results <-chan processRe
 					cleanupErrors = append(cleanupErrors, fmt.Errorf("kill process %d: %w", child.Process.Pid, err))
 				}
 			}
-			for remaining > 0 {
-				result := <-results
-				if result.index >= len(finished) || finished[result.index] {
-					continue
-				}
-				finished[result.index] = true
-				remaining--
+			if err := reapAfterKill(results, finished, remaining, gracePeriod); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
 			}
 			return errors.Join(cleanupErrors...)
 		case <-ticker.C:
 		}
 	}
+}
+
+func reapAfterKill(results <-chan processResult, finished []bool, remaining int, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for remaining > 0 {
+		select {
+		case result := <-results:
+			if result.index >= len(finished) || finished[result.index] {
+				continue
+			}
+			finished[result.index] = true
+			remaining--
+		case <-timer.C:
+			return fmt.Errorf("timed out waiting for %d local process(es) after force kill", remaining)
+		}
+	}
+	return nil
 }
 
 func joinPrimary(primary, cleanup error) error {

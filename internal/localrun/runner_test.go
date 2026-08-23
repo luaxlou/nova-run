@@ -76,7 +76,7 @@ func TestRunCancellationStopsProcessAndReturnsInterruptCode(t *testing.T) {
 	go func() {
 		done <- Run(ctx, []Command{{
 			Name:         "api",
-			ShellCommand: `trap 'printf stopped; exit 0' TERM; printf ready; while :; do sleep 1; done`,
+			ShellCommand: `trap 'printf stopped; exit 0' TERM; sleep 100 & child=$!; printf ready; wait "$child"`,
 		}}, t.TempDir(), Streams{Stdout: &stdout, Stderr: &stdout}, 500*time.Millisecond)
 	}()
 

@@ -284,12 +284,14 @@ func TestLoadForLifecycleRejectsInvalidCommandCharacters(t *testing.T) {
 }
 
 func TestLoadForLifecycleRejectsFormerRunField(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("run: printf old\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, _, err := LoadForLifecycle(dir)
-	if err == nil || !strings.Contains(err.Error(), "run is no longer supported") {
-		t.Fatalf("err = %v", err)
+	for _, config := range []string{"run: printf old\n", "run:\n", "apps:\n  api:\n    run:\n"} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte(config), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := LoadForLifecycle(dir)
+		if err == nil || !strings.Contains(err.Error(), "run is no longer supported") {
+			t.Fatalf("config %q err = %v", config, err)
+		}
 	}
 }

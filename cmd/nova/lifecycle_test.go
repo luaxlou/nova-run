@@ -92,6 +92,34 @@ func TestConfiguredLocalLifecyclePreflightsAllTargets(t *testing.T) {
 	}
 }
 
+func TestRestartAllStopsEveryTargetBeforeStartingAnyTarget(t *testing.T) {
+	dir := t.TempDir()
+	raw := []byte(`apps:
+  api:
+    start: printf start-api, >> events
+    stop: printf stop-api, >> events
+  web:
+    start: printf start-web, >> events
+    stop: printf stop-web, >> events
+`)
+	if err := os.WriteFile(filepath.Join(dir, project.ConfigFile), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := runConfiguredLocalLifecycle(context.Background(), dir, "restart", lifecycleArgs{Selector: "all"}, localcommand.Streams{
+		Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "events"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(content) != "stop-api,stop-web,start-api,start-web," {
+		t.Fatalf("events = %q", content)
+	}
+}
+
 func TestConfiguredLocalLifecyclePreservesChildExitCode(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, project.ConfigFile), []byte("start: exit 8\nstop: exit 7\n"), 0o644); err != nil {

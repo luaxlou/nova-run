@@ -70,7 +70,7 @@ Nova waits for the configured command itself to finish and returns its exit code
 
 For `restart`, Nova runs `stop` first. If `stop` fails, Nova returns that failure and does not run `start`. If `start` fails, Nova returns the start failure. `run` follows exactly the same sequence and errors.
 
-For `all`, targets execute in YAML declaration order. Each target action completes before the next begins. A failure stops the sequence immediately; Nova does not attempt rollback because it owns no runtime state and cannot infer how user commands should be compensated.
+For `all`, targets execute in YAML declaration order. Start and stop make one pass over all targets. Restart and run first make a complete stop pass over every target, then a complete start pass. A failure stops the sequence immediately; Nova does not attempt rollback because it owns no runtime state and cannot infer how user commands should be compensated.
 
 Before executing anything, Nova resolves and validates all required commands for every selected target. This prevents a partially executed `all` caused by a missing later configuration value.
 

@@ -15,7 +15,6 @@ type Config struct {
 	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
 	Start     string         `json:"start,omitempty" yaml:"start,omitempty"`
 	Stop      string         `json:"stop,omitempty" yaml:"stop,omitempty"`
-	Run       string         `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string       `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig  `json:"service,omitempty" yaml:"service,omitempty"`
@@ -27,7 +26,6 @@ type App struct {
 	App       string        `json:"app,omitempty" yaml:"app,omitempty"`
 	Start     string        `json:"start,omitempty" yaml:"start,omitempty"`
 	Stop      string        `json:"stop,omitempty" yaml:"stop,omitempty"`
-	Run       string        `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig   `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string      `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig `json:"service,omitempty" yaml:"service,omitempty"`
@@ -59,18 +57,49 @@ func LoadForLifecycle(dir string) (Config, string, error) {
 	if err != nil {
 		return Config{}, "", err
 	}
-	if strings.TrimSpace(cfg.Run) != "" {
-		return Config{}, "", fmt.Errorf("%s run is no longer supported; configure start and stop", ConfigFile)
-	}
-	for name, app := range cfg.Apps {
-		if strings.TrimSpace(app.Run) != "" {
-			return Config{}, "", fmt.Errorf("%s apps.%s run is no longer supported; configure start and stop", ConfigFile, name)
-		}
+	if err := rejectLegacyRun(path); err != nil {
+		return Config{}, "", err
 	}
 	if err := validateLifecycleSyntax(cfg); err != nil {
 		return Config{}, "", err
 	}
 	return cfg, path, nil
+}
+
+func rejectLegacyRun(path string) error {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", ConfigFile, err)
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return fmt.Errorf("parse %s: %w", ConfigFile, err)
+	}
+	if len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	doc := root.Content[0]
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		key, value := doc.Content[i], doc.Content[i+1]
+		if key.Value == "run" {
+			return fmt.Errorf("%s run is no longer supported; configure start and stop", ConfigFile)
+		}
+		if key.Value != "apps" || value.Kind != yaml.MappingNode {
+			continue
+		}
+		for j := 0; j+1 < len(value.Content); j += 2 {
+			name, app := value.Content[j].Value, value.Content[j+1]
+			if app.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k+1 < len(app.Content); k += 2 {
+				if app.Content[k].Value == "run" {
+					return fmt.Errorf("%s apps.%s run is no longer supported; configure start and stop", ConfigFile, name)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func loadConfig(dir string) (Config, string, error) {

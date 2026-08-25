@@ -301,8 +301,8 @@ func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed
 	}
 
 	commands := make([]localcommand.Command, 0, len(targets)*len(actions))
-	for _, target := range targets {
-		for _, lifecycleAction := range actions {
+	for _, lifecycleAction := range actions {
+		for _, target := range targets {
 			command := target.Start
 			if lifecycleAction == project.ActionStop {
 				command = target.Stop

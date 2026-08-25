@@ -7,14 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.14] - 2026-08-25
+
 ### Added
+- 在 `nova.yaml` 顶层及 `apps.<selector>` 中支持无状态的本地 `start`、`stop` 生命周期命令。
+- 生命周期命令支持 `--remote`，显式选择原有 Nova Agent 操作。
 - 修复 `nova-agent` API 路由层编译错误，补齐 `RenderJSON`/`RenderJSONError` 使用方式。
 - 修正 `api.go` 中应用列表目录读取逻辑，避免 `[]DirEntry` 与 `[]string` 类型冲突。
 - 规范 `internal/deploy/replace.go` 中 `EnsureRunBinary` 的导入与调用。
 - 增加 `nova-agent` Linux 交付流程（可直接由本机交付至服务端）与本次上线执行记录。
 
 ### Changed
+- **破坏性变更：** `nova start`、`nova stop` 和 `nova restart` 默认执行本地配置；控制远端服务必须增加 `--remote`。
+- **破坏性变更：** `nova run` 现在与 `nova restart` 等价，固定执行 `stop` 后执行 `start`；旧的 `run: <command>` 配置不再支持。
+- Nova 不再监督本地进程或保存生命周期状态。需要后台运行时，项目自己的 `start` 命令必须完成后台化并返回。
 - `nova` 安装建议增加无 sudo 场景下的本地用户目录安装方案（用于开发机快速验证）。
+
+### Removed
+- 删除本地前台进程 supervisor、进程组清理和自动等待行为。
 
 ### Fixed
 - 修复 `nova-agent` 在服务器 `<your-domain>` 首次启动报 `status=203/EXEC` 的架构不匹配问题：补充 Linux 目标编译产物。

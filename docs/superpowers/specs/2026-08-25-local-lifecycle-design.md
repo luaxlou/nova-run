@@ -1,159 +1,140 @@
-# Nova Run Local Lifecycle Design
+# Nova Run Stateless Local Lifecycle Design
 
 **Date:** 2026-08-25
 
 ## Goal
 
-Make `nova start`, `nova stop`, and `nova restart` manage the current project's local `run` commands by default. Local starts must detach from the invoking terminal and return after startup is confirmed. The existing Nova Agent lifecycle operations remain available through an explicit `--remote` flag.
+Make Nova a stateless command runner for local application lifecycle commands. `nova start`, `nova stop`, `nova restart`, and `nova run` execute commands declared in the current project's `nova.yaml`; they do not create a supervisor, daemon, PID file, lock file, cache entry, or process registry.
 
-`nova run` remains the foreground development command. This preserves its attached stdin/stdout behavior and its existing `Ctrl+C` cleanup contract.
+Remote Nova Agent lifecycle operations remain available only through `--remote`.
+
+## Configuration
+
+Single-app projects declare local commands directly:
+
+```yaml
+start: npm run start
+stop: npm run stop
+```
+
+Multi-app projects declare them per selector:
+
+```yaml
+apps:
+  api:
+    start: scripts/start-api.sh
+    stop: scripts/stop-api.sh
+  web:
+    start: scripts/start-web.sh
+    stop: scripts/stop-web.sh
+```
+
+Top-level `start` and `stop` are inherited by an app when that app does not override them, matching existing top-level/app inheritance patterns.
+
+There is no configured `restart` command. Restart is always the composition `stop` followed by `start`.
+
+The former `run: <command>` field is removed from the local lifecycle schema. This is an intentional breaking change. Projects migrate by defining both `start` and `stop`; a persistent application must make its own `start` command detach or delegate to a process manager and then return.
+
+Deployment fields remain unchanged. `service.command` still describes the remote production process installed and controlled by Nova Agent.
 
 ## CLI Contract
-
-The lifecycle commands accept zero or one app selector plus an optional `--remote` flag:
 
 ```text
 nova start [app|all] [--remote]
 nova stop [app|all] [--remote]
 nova restart [app|all] [--remote]
+nova run [app|all] [--remote]
 ```
 
-`--remote` is accepted before or after the selector. Unknown flags, duplicate selectors, and duplicate `--remote` flags are errors.
+`--remote` is accepted before or after the optional selector. Unknown flags, repeated `--remote`, or more than one selector are errors.
 
-Without `--remote`, the commands load the nearest `nova.yaml` through the local-run configuration path and resolve `run` commands using the same default selector and `all` ordering as `nova run`. They do not bootstrap remote configuration, read an Agent token, or create a remote client.
+Without `--remote`:
 
-With `--remote`, the commands retain their current behavior: load deploy targets from `nova.yaml`, use the configured Nova Agent, and print the existing remote success messages.
+- `start` executes the resolved local `start` command.
+- `stop` executes the resolved local `stop` command.
+- `restart` executes the resolved local `stop`, then the resolved local `start`.
+- `run` is an exact alias for local `restart`.
 
-Other commands are unchanged. In particular, `status` and `logs` remain remote-only in this change.
+With `--remote`:
 
-## Local Supervisor Architecture
+- `start`, `stop`, and `restart` retain their current Nova Agent behavior.
+- `run --remote` is an alias for remote `restart`.
 
-A detached Nova subprocess supervises each selected local app. This is preferable to releasing a raw shell child because the supervisor can own the process group, reap descendants, maintain an exclusive state lock, and apply the same bounded TERM/KILL cleanup policy after the original CLI exits.
+All four commands route before automatic remote configuration bootstrap. Local execution never reads an Agent endpoint/token or starts interactive `nova init`. Explicit remote execution uses the existing bootstrap and client behavior.
 
-The public command process performs these steps for each selected app:
+## Execution Semantics
 
-1. Resolve all requested local commands before starting any process.
-2. Derive a stable state directory from the canonical `nova.yaml` path and local selector name.
-3. Check the app state lock. If it is held, report that the app is already running without starting a duplicate.
-4. Start the current Nova executable in a private supervisor mode with stdin disconnected and stdout/stderr appended to the app's local log.
-5. Wait for a bounded readiness acknowledgement from the supervisor.
-6. Return success immediately after the supervisor has started and recorded its state. A failed or timed-out readiness check is an error and must not leave an untracked child.
+Nova executes each configured local command as `sh -lc <command>` in the directory containing `nova.yaml`. The command inherits the caller's environment and standard input/output/error.
 
-The private supervisor loads the already-resolved command from a parent-owned startup payload, creates a new process group/session, starts `sh -lc <run-command>` in the `nova.yaml` directory, holds the state lock for its entire lifetime, records its PID and command metadata, forwards termination to the complete child process group, and removes transient state on exit. The command is not passed in process-list arguments.
+Nova waits for the configured command itself to finish and returns its exit code. It does not wait for application processes that the command correctly detached. Nova cannot make an arbitrary foreground server nonblocking without becoming a supervisor, so non-hanging local lifecycle is a configuration contract: `start` must return after starting the application.
 
-The private supervisor entry point is deliberately undocumented and rejected when its required parent-generated payload is missing. It is an implementation detail, not a supported CLI API.
+For `restart`, Nova runs `stop` first. If `stop` fails, Nova returns that failure and does not run `start`. If `start` fails, Nova returns the start failure. `run` follows exactly the same sequence and errors.
 
-## State and Logs
+For `all`, targets execute in YAML declaration order. Each target action completes before the next begins. A failure stops the sequence immediately; Nova does not attempt rollback because it owns no runtime state and cannot infer how user commands should be compensated.
 
-Local lifecycle data lives below `os.UserCacheDir()` so using Nova does not dirty the project repository. The layout is conceptually:
+Before executing anything, Nova resolves and validates all required commands for every selected target. This prevents a partially executed `all` caused by a missing later configuration value.
 
-```text
-<user-cache>/nova/run/<project-key>/<app-key>/
-  lock
-  state.json
-  output.log
-```
+## Validation and Resolution
 
-The project key is a hash of the canonical `nova.yaml` path. Human-readable canonical project and app names remain in `state.json` for diagnostics. App keys are escaped or hashed so selectors cannot traverse directories.
+Project configuration adds `Start` and `Stop` fields to both the root config and app entries. Values are trimmed and rejected when empty, or when they contain NUL, newline, or carriage return characters.
 
-The lock, rather than the PID file alone, is the source of truth for whether a Nova supervisor owns the state. This prevents a stale PID from causing an unrelated reused PID to be killed. State writes use a temporary file plus rename so readers never observe partial JSON.
+Local resolution is independent of deployment validation, so a lifecycle-only `nova.yaml` does not need `app`, `build`, `artifacts`, or `service.command`. Existing deploy resolution and validation remain unchanged.
 
-Logs append across starts. `nova start` prints the log path to make detached output discoverable. Log rotation and local `nova logs` support are outside this change.
+Resolution rules:
 
-## Start, Stop, and Restart Semantics
+- Empty selector chooses the root lifecycle config when either root `start` or root `stop` is present.
+- Otherwise, empty selector chooses the first YAML-declared app.
+- A named selector resolves only from `apps.<selector>` and may inherit root `start`/`stop`.
+- `all` resolves every configured app in YAML declaration order; for a root-only project it resolves one `default` target.
+- `start` validates only `start`; `stop` validates only `stop`; `restart` and `run` validate both before execution.
 
-### Start
+## Error and Exit-Code Behavior
 
-- Validate every selected `run` command before starting any supervisor.
-- Start selected apps in declaration order.
-- Treat an already-running app as an idempotent success and identify it as already running.
-- If a later app fails to start during `all`, stop only the supervisors started by this invocation; pre-existing apps remain running.
-- The foreground command has a bounded startup wait and never waits for the application to exit.
+Configuration, parsing, and shell-start errors exit with code 1. A shell command that exits with a positive status propagates that status through the CLI, including `stop` failures during restart/run.
 
-Readiness means the supervisor owns its state lock and successfully started the shell process. It does not imply application-level health.
-
-### Stop
-
-- Resolve the requested app identities from `nova.yaml`; a `run` command is not required merely to stop an existing supervisor.
-- If no supervisor owns the state lock, remove stale metadata and report the app as already stopped.
-- Otherwise signal the recorded supervisor, wait a bounded grace period, then force termination if required.
-- The supervisor is responsible for terminating and reaping the complete application process group.
-- Never signal a PID unless the matching state lock is currently owned and the metadata identifies the same canonical project and app.
-
-### Restart
-
-- Resolve and validate all requested `run` commands first.
-- Stop each requested local supervisor using the local stop semantics.
-- Start fresh supervisors only after all stops complete.
-- Return an error if cleanup cannot be confirmed; do not layer a second process over an uncertain existing one.
-
-## Process and Signal Handling
-
-Unix is the supported process-management target because the current local runner already depends on Unix process groups. The detached supervisor starts in its own session. Its application shell starts in a distinct process group so shutdown can target all descendants without terminating the supervisor before it has reaped them and cleared state.
-
-On SIGINT, SIGTERM, or an explicit local stop request, the supervisor forwards TERM to the application process group, waits up to the configured grace period, sends KILL to survivors, reaps the shell, clears state, releases the lock, and exits. All waits have explicit deadlines.
-
-Unexpected application exit causes the supervisor to record the exit in the log, clear its active state, and exit. This change does not add automatic restart.
-
-## Error Handling
-
-Errors include the local selector and the relevant state or log path where useful, but never print the resolved environment or remote token. Startup distinguishes configuration errors, already-running state, supervisor bootstrap failure, and application start failure.
-
-Stop and restart use bounded waits so stale or uncooperative processes cannot hang the CLI. Partial `all` failures report the primary error plus any rollback cleanup error.
+Errors identify the action and local selector without printing environment variables or remote credentials. Multi-app errors also identify the target that failed.
 
 ## Code Organization
 
-- `cmd/nova/main.go` routes local lifecycle commands before remote bootstrap, parses `--remote`, and retains the existing remote adapters.
-- Focused command tests under `cmd/nova` verify routing, argument handling, and remote-bootstrap bypass.
-- A new `internal/locallifecycle` package owns cache paths, state metadata, locking, supervisor launch/readiness, and start/stop/restart orchestration.
-- Unix-specific locking, session, and signal operations live in `_unix.go` files.
-- Existing `internal/localrun` remains responsible for foreground `nova run`; shared low-level process helpers may be extracted only when doing so reduces duplication without changing foreground behavior.
+- `internal/project/config.go` owns lifecycle fields, syntax validation, inheritance, target resolution, and declaration ordering.
+- A focused `internal/localcommand` package executes validated command sequences and maps `exec.ExitError` to a stable `ExitCode()` contract.
+- `cmd/nova/main.go` owns argument parsing and local/remote routing. Shared helpers keep `start`, `stop`, `restart`, and `run` behavior consistent.
+- Existing `internal/localrun` is removed after its process-supervisor behavior and tests are no longer referenced.
 
 ## Test Strategy
 
-Implementation follows red-green-refactor. Tests use real short-lived shell processes where process behavior matters and injected adapters only at CLI routing boundaries.
+Implementation follows red-green-refactor. Tests cover:
 
-Coverage includes:
+- root, named, inherited, default-first, and `all` resolution;
+- lifecycle-only configuration without deployment fields;
+- removal/rejection of the former `run` field;
+- preflight of every target before `all` starts;
+- `start` and `stop` executing exactly one command;
+- `restart` and `run` executing stop then start;
+- stop failure preventing start;
+- exact child exit-code propagation;
+- working directory, environment, and stdio inheritance;
+- local execution without Agent configuration;
+- `--remote` before and after selectors, including `run --remote` mapping to remote restart;
+- no regression in deploy, status, logs, list, remove, or Agent behavior;
+- full tests, race tests, vet, and four release-target cross-builds.
 
-- lifecycle flag parsing with `--remote` before and after selectors;
-- default local routing without endpoint/token configuration;
-- explicit remote routing retaining existing target resolution and client calls;
-- detached start returning promptly while the application remains alive;
-- application output reaching the advertised log;
-- idempotent repeated start;
-- stop of running, stopped, and stale-state apps;
-- restart replacing the process and returning promptly;
-- `all` ordering, preflight validation, and rollback after partial startup;
-- process-group cleanup including background descendants;
-- uncooperative child escalation with bounded completion;
-- canonical project isolation and selectors that contain unsafe path characters;
-- no regression in foreground `nova run` signal and exit-code behavior;
-- `go test -race ./...`, formatting, vetting, and cross-compilation for the release targets.
+## Documentation and Release
 
-## Documentation and Compatibility
+README, the project spec, CLI usage, and examples will describe the new `start`/`stop` schema and the stateless behavior. Remote lifecycle examples must use `--remote`. The changelog will prominently call out both breaking changes: remote lifecycle is no longer the default, and `run` now means stateless restart rather than foreground supervision.
 
-README usage and examples will state that lifecycle commands are local by default and show `--remote` for deployed services. Existing scripts that call `nova start`, `nova stop`, or `nova restart` for remote services must add `--remote`; this is an intentional breaking CLI-default change and will be called out prominently in the changelog and release notes.
+After verification, update version metadata to `0.1.14`, push `main`, create tag `v0.1.14`, wait for the existing GitHub Actions release workflow, and verify these downloadable assets and their checksums:
 
-No `nova.yaml` schema changes are required. The same `run` field powers foreground `nova run` and detached local lifecycle commands, while `service.command` remains remote-only.
-
-## Release
-
-After implementation, tests, and review pass:
-
-1. Update `CHANGELOG.md` with the breaking default change and the new local supervisor behavior.
-2. Update the repository version metadata consistently with the existing release convention.
-3. Commit the release-ready changes and push `main`.
-4. Create and push tag `v0.1.14`, the next patch tag after `v0.1.13`.
-5. Wait for `.github/workflows/release.yml` to build Linux and macOS artifacts for amd64 and arm64.
-6. Confirm the GitHub release exists, all four binaries and `SHA256SUMS.txt` are attached, and the latest installer resolves the new release.
-
-The release is not complete merely when the tag is pushed; workflow and downloadable-asset verification are required.
+- `nova-linux-amd64`
+- `nova-linux-arm64`
+- `nova-darwin-amd64`
+- `nova-darwin-arm64`
+- `SHA256SUMS.txt`
 
 ## Out of Scope
 
-- Changing `nova run` from foreground to background.
-- Local implementations of `status` or `logs`.
-- Application health checks or readiness probes.
-- Automatic restart, watch mode, dependency ordering, or log rotation.
-- Windows process management.
-- A machine-wide Nova daemon.
+- Supervising, daemonizing, monitoring, or automatically restarting application processes.
+- PID files, state locks, cache records, status discovery, or local log storage.
+- Inferring how to stop an application that has no configured `stop` command.
+- Application health/readiness checks, dependency ordering, parallel `all`, or rollback.
+- Changes to remote deployment artifacts or Nova Agent process management.

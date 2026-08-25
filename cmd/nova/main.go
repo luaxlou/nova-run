@@ -23,7 +23,7 @@ import (
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/client"
-	"github.com/luaxlou/glow-ops/internal/localrun"
+	"github.com/luaxlou/glow-ops/internal/localcommand"
 	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
@@ -35,11 +35,11 @@ Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova run [app|all]      # 读取当前目录 nova.yaml，在前台运行本地开发命令
+  nova run [app|all] [--remote]      # 默认在本地执行 stop + start；--remote 操作 Nova Agent
   nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认第一个
-  nova start [app|all]
-  nova stop [app|all]
-  nova restart [app|all]
+  nova start [app|all] [--remote]
+  nova stop [app|all] [--remote]
+  nova restart [app|all] [--remote]
   nova status [app|all]
   nova logs [app|all] [-f]
   nova list
@@ -59,15 +59,26 @@ func main() {
 		usage()
 		return
 	}
-	if len(args) >= 2 && args[1] == "run" {
-		err := runConfiguredLocal(context.Background(), ".", args[2:], localrun.Streams{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		})
+	if len(args) >= 2 && isLifecycleCommand(args[1]) {
+		action := args[1]
+		parsed, err := parseLifecycleArgs(args[2:])
+		if err == nil && parsed.Remote {
+			err = autoBootstrapRuntimeConfig("remote-lifecycle")
+			if err == nil {
+				var targets []project.Target
+				targets, err = loadTargetsFromArgs(optionalArg(parsed.Selector))
+				if err == nil {
+					err = runConfiguredRemoteLifecycle(context.Background(), client.NewClient(), action, targets)
+				}
+			}
+		} else if err == nil {
+			err = runConfiguredLocalLifecycle(context.Background(), ".", action, parsed, localcommand.Streams{
+				Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
+			})
+		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "run failed: %v\n", err)
-			os.Exit(localRunExitCode(err))
+			fmt.Fprintf(os.Stderr, "%s failed: %v\n", action, err)
+			os.Exit(cliExitCode(err))
 		}
 		return
 	}
@@ -108,45 +119,6 @@ func main() {
 		if err := runConfiguredDeploy(ctx, cli, rest); err != nil {
 			fmt.Printf("deploy failed: %v\n", err)
 			os.Exit(1)
-		}
-	case "start":
-		targets, err := loadTargetsFromArgs(rest)
-		if err != nil {
-			fmt.Printf("start failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, target := range targets {
-			if err := cli.Start(ctx, target.App); err != nil {
-				fmt.Printf("start failed: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("%s start command sent\n", target.App)
-		}
-	case "stop":
-		targets, err := loadTargetsFromArgs(rest)
-		if err != nil {
-			fmt.Printf("stop failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, target := range targets {
-			if err := cli.Stop(ctx, target.App); err != nil {
-				fmt.Printf("stop failed: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("%s stop command sent\n", target.App)
-		}
-	case "restart":
-		targets, err := loadTargetsFromArgs(rest)
-		if err != nil {
-			fmt.Printf("restart failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, target := range targets {
-			if err := cli.Restart(ctx, target.App); err != nil {
-				fmt.Printf("restart failed: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Printf("%s restart command sent\n", target.App)
 		}
 	case "status":
 		targets, err := loadTargetsFromArgs(rest)
@@ -256,42 +228,121 @@ func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string)
 	return nil
 }
 
-func runConfiguredLocal(ctx context.Context, dir string, args []string, streams localrun.Streams) error {
-	if len(args) > 1 {
-		return fmt.Errorf("expected zero or one configured app selector")
+type lifecycleArgs struct {
+	Selector string
+	Remote   bool
+}
+
+func isLifecycleCommand(action string) bool {
+	switch action {
+	case "start", "stop", "restart", "run":
+		return true
+	default:
+		return false
 	}
-	cfg, path, err := project.LoadForRun(dir)
+}
+
+func parseLifecycleArgs(args []string) (lifecycleArgs, error) {
+	var parsed lifecycleArgs
+	for _, arg := range args {
+		switch {
+		case arg == "--remote":
+			if parsed.Remote {
+				return lifecycleArgs{}, fmt.Errorf("--remote may only be specified once")
+			}
+			parsed.Remote = true
+		case strings.HasPrefix(arg, "-"):
+			return lifecycleArgs{}, fmt.Errorf("unknown lifecycle argument: %s", arg)
+		case parsed.Selector != "":
+			return lifecycleArgs{}, fmt.Errorf("expected at most one configured app selector")
+		case strings.TrimSpace(arg) == "":
+			return lifecycleArgs{}, fmt.Errorf("configured app selector must not be empty")
+		default:
+			parsed.Selector = arg
+		}
+	}
+	return parsed, nil
+}
+
+func lifecycleActions(action string) ([]project.LifecycleAction, error) {
+	switch action {
+	case "start":
+		return []project.LifecycleAction{project.ActionStart}, nil
+	case "stop":
+		return []project.LifecycleAction{project.ActionStop}, nil
+	case "restart", "run":
+		return []project.LifecycleAction{project.ActionStop, project.ActionStart}, nil
+	default:
+		return nil, fmt.Errorf("unknown lifecycle action %q", action)
+	}
+}
+
+func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed lifecycleArgs, streams localcommand.Streams) error {
+	actions, err := lifecycleActions(action)
+	if err != nil {
+		return err
+	}
+	cfg, path, err := project.LoadForLifecycle(dir)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(streams.Stdout, "project config: %s\n", path)
 
-	selector := ""
-	if len(args) == 1 {
-		selector = args[0]
-	}
-	var targets []project.RunTarget
-	if selector == "all" {
-		targets, err = project.ResolveAllRuns(cfg)
+	var targets []project.LifecycleTarget
+	if parsed.Selector == "all" {
+		targets, err = project.ResolveAllLifecycles(cfg, actions...)
 	} else {
-		target, resolveErr := project.ResolveRun(cfg, selector)
-		if resolveErr != nil {
-			return resolveErr
-		}
-		targets = []project.RunTarget{target}
+		var target project.LifecycleTarget
+		target, err = project.ResolveLifecycle(cfg, parsed.Selector, actions...)
+		targets = []project.LifecycleTarget{target}
 	}
 	if err != nil {
 		return err
 	}
 
-	commands := make([]localrun.Command, 0, len(targets))
+	commands := make([]localcommand.Command, 0, len(targets)*len(actions))
 	for _, target := range targets {
-		commands = append(commands, localrun.Command{Name: target.Name, ShellCommand: target.Command})
+		for _, lifecycleAction := range actions {
+			command := target.Start
+			if lifecycleAction == project.ActionStop {
+				command = target.Stop
+			}
+			commands = append(commands, localcommand.Command{
+				Target: target.Name, Action: string(lifecycleAction), ShellCommand: command,
+			})
+		}
 	}
-	return localrun.Run(ctx, commands, filepath.Dir(path), streams, 3*time.Second)
+	return localcommand.Run(ctx, commands, filepath.Dir(path), streams)
 }
 
-func localRunExitCode(err error) int {
+type remoteLifecycleClient interface {
+	Start(context.Context, string) error
+	Stop(context.Context, string) error
+	Restart(context.Context, string) error
+}
+
+func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient, action string, targets []project.Target) error {
+	for _, target := range targets {
+		var err error
+		switch action {
+		case "start":
+			err = cli.Start(ctx, target.App)
+		case "stop":
+			err = cli.Stop(ctx, target.App)
+		case "restart", "run":
+			err = cli.Restart(ctx, target.App)
+		default:
+			return fmt.Errorf("unknown remote lifecycle action %q", action)
+		}
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%s %s command sent\n", target.App, action)
+	}
+	return nil
+}
+
+func cliExitCode(err error) int {
 	var exitCoder interface{ ExitCode() int }
 	if errors.As(err, &exitCoder) && exitCoder.ExitCode() > 0 {
 		return exitCoder.ExitCode()
@@ -630,7 +681,7 @@ func readTokenFile(path string) string {
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "init" || cmd == "target" || cmd == "run" {
+	if cmd == "agent" || cmd == "init" || cmd == "target" || isLifecycleCommand(cmd) {
 		return nil
 	}
 	if runtimeConfigReady() {

@@ -161,32 +161,33 @@ func TestValidateRejectsReservedAllApp(t *testing.T) {
 	}
 }
 
-func TestLoadForRunAllowsRunOnlyConfigWithoutDeployFields(t *testing.T) {
+func TestLoadForLifecycleAllowsLifecycleOnlyConfigWithoutDeployFields(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("run: printf local\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: printf start\nstop: printf stop\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	cfg, path, err := LoadForRun(dir)
+	cfg, path, err := LoadForLifecycle(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if path != filepath.Join(dir, ConfigFile) {
 		t.Fatalf("path = %q", path)
 	}
-	if cfg.Run != "printf local" {
-		t.Fatalf("run = %q", cfg.Run)
+	if cfg.Start != "printf start" || cfg.Stop != "printf stop" {
+		t.Fatalf("lifecycle = start %q stop %q", cfg.Start, cfg.Stop)
 	}
 	if _, _, err := Load(dir); err == nil {
-		t.Fatal("run-only config must not pass deployment validation")
+		t.Fatal("lifecycle-only config must not pass deployment validation")
 	}
 }
 
-func TestResolveRunUsesTopLevelAndAppCommands(t *testing.T) {
+func TestResolveLifecycleUsesTopLevelAndAppCommands(t *testing.T) {
 	cfg := Config{
-		Run: "printf root",
+		Start: "printf root-start",
+		Stop:  "printf root-stop",
 		Apps: map[string]App{
-			"api":    {Run: "go run ./cmd/api"},
+			"api":    {Start: "printf api-start", Stop: "printf api-stop"},
 			"worker": {},
 		},
 		AppOrder: []string{"api", "worker"},
@@ -194,15 +195,15 @@ func TestResolveRunUsesTopLevelAndAppCommands(t *testing.T) {
 
 	tests := []struct {
 		selector string
-		want     RunTarget
+		want     LifecycleTarget
 	}{
-		{selector: "", want: RunTarget{Name: "default", Command: "printf root"}},
-		{selector: "api", want: RunTarget{Name: "api", Command: "go run ./cmd/api"}},
-		{selector: "worker", want: RunTarget{Name: "worker", Command: "printf root"}},
+		{selector: "", want: LifecycleTarget{Name: "default", Start: "printf root-start", Stop: "printf root-stop"}},
+		{selector: "api", want: LifecycleTarget{Name: "api", Start: "printf api-start", Stop: "printf api-stop"}},
+		{selector: "worker", want: LifecycleTarget{Name: "worker", Start: "printf root-start", Stop: "printf root-stop"}},
 	}
 	for _, test := range tests {
 		t.Run(test.selector, func(t *testing.T) {
-			got, err := ResolveRun(cfg, test.selector)
+			got, err := ResolveLifecycle(cfg, test.selector, ActionStop, ActionStart)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -213,35 +214,35 @@ func TestResolveRunUsesTopLevelAndAppCommands(t *testing.T) {
 	}
 }
 
-func TestResolveRunDefaultsToFirstDeclaredApp(t *testing.T) {
+func TestResolveLifecycleDefaultsToFirstDeclaredApp(t *testing.T) {
 	cfg := Config{
 		Apps: map[string]App{
-			"api":    {Run: "go run ./cmd/api"},
-			"worker": {Run: "go run ./cmd/worker"},
+			"api":    {Start: "start-api", Stop: "stop-api"},
+			"worker": {Start: "start-worker", Stop: "stop-worker"},
 		},
 		AppOrder: []string{"worker", "api"},
 	}
 
-	target, err := ResolveRun(cfg, "")
+	target, err := ResolveLifecycle(cfg, "", ActionStop, ActionStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (RunTarget{Name: "worker", Command: "go run ./cmd/worker"}); target != want {
+	if want := (LifecycleTarget{Name: "worker", Start: "start-worker", Stop: "stop-worker"}); target != want {
 		t.Fatalf("target = %#v, want %#v", target, want)
 	}
 }
 
-func TestResolveAllRunsRejectsMissingCommandWithoutPartialTargets(t *testing.T) {
+func TestResolveAllLifecyclesPreflightsMissingCommandWithoutPartialTargets(t *testing.T) {
 	cfg := Config{
 		Apps: map[string]App{
-			"api":    {Run: "go run ./cmd/api"},
-			"worker": {},
+			"api":    {Start: "start-api", Stop: "stop-api"},
+			"worker": {Stop: "stop-worker"},
 		},
 		AppOrder: []string{"api", "worker"},
 	}
 
-	targets, err := ResolveAllRuns(cfg)
-	if err == nil || !strings.Contains(err.Error(), "nova.yaml apps.worker run is required") {
+	targets, err := ResolveAllLifecycles(cfg, ActionStop, ActionStart)
+	if err == nil || !strings.Contains(err.Error(), "nova.yaml apps.worker start is required") {
 		t.Fatalf("err = %v", err)
 	}
 	if targets != nil {
@@ -249,25 +250,46 @@ func TestResolveAllRunsRejectsMissingCommandWithoutPartialTargets(t *testing.T) 
 	}
 }
 
-func TestResolveAllRunsUsesTopLevelOnceWithoutApps(t *testing.T) {
-	targets, err := ResolveAllRuns(Config{Run: "printf root"})
+func TestResolveAllLifecyclesUsesTopLevelOnceWithoutApps(t *testing.T) {
+	targets, err := ResolveAllLifecycles(Config{Start: "start", Stop: "stop"}, ActionStop, ActionStart)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []RunTarget{{Name: "default", Command: "printf root"}}
+	want := []LifecycleTarget{{Name: "default", Start: "start", Stop: "stop"}}
 	if !slices.Equal(targets, want) {
 		t.Fatalf("targets = %#v, want %#v", targets, want)
 	}
 }
 
-func TestLoadForRunRejectsInvalidCommandCharacters(t *testing.T) {
+func TestResolveLifecycleValidatesOnlyRequestedAction(t *testing.T) {
+	cfg := Config{Start: "printf start"}
+	if _, err := ResolveLifecycle(cfg, "", ActionStart); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ResolveLifecycle(cfg, "", ActionStop); err == nil || !strings.Contains(err.Error(), "stop is required") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLoadForLifecycleRejectsInvalidCommandCharacters(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("run: |\n  printf one\n  printf two\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: |\n  printf one\n  printf two\nstop: printf stop\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	_, _, err := LoadForRun(dir)
-	if err == nil || !strings.Contains(err.Error(), "nova.yaml run contains invalid characters") {
+	_, _, err := LoadForLifecycle(dir)
+	if err == nil || !strings.Contains(err.Error(), "nova.yaml start contains invalid characters") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestLoadForLifecycleRejectsFormerRunField(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("run: printf old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := LoadForLifecycle(dir)
+	if err == nil || !strings.Contains(err.Error(), "run is no longer supported") {
 		t.Fatalf("err = %v", err)
 	}
 }

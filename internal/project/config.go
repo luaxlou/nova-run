@@ -13,6 +13,8 @@ const ConfigFile = "nova.yaml"
 
 type Config struct {
 	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
+	Start     string         `json:"start,omitempty" yaml:"start,omitempty"`
+	Stop      string         `json:"stop,omitempty" yaml:"stop,omitempty"`
 	Run       string         `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string       `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
@@ -23,6 +25,8 @@ type Config struct {
 
 type App struct {
 	App       string        `json:"app,omitempty" yaml:"app,omitempty"`
+	Start     string        `json:"start,omitempty" yaml:"start,omitempty"`
+	Stop      string        `json:"stop,omitempty" yaml:"stop,omitempty"`
 	Run       string        `json:"run,omitempty" yaml:"run,omitempty"`
 	Build     BuildConfig   `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string      `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
@@ -61,6 +65,25 @@ func LoadForRun(dir string) (Config, string, error) {
 	return cfg, path, nil
 }
 
+func LoadForLifecycle(dir string) (Config, string, error) {
+	cfg, path, err := loadConfig(dir)
+	if err != nil {
+		return Config{}, "", err
+	}
+	if strings.TrimSpace(cfg.Run) != "" {
+		return Config{}, "", fmt.Errorf("%s run is no longer supported; configure start and stop", ConfigFile)
+	}
+	for name, app := range cfg.Apps {
+		if strings.TrimSpace(app.Run) != "" {
+			return Config{}, "", fmt.Errorf("%s apps.%s run is no longer supported; configure start and stop", ConfigFile, name)
+		}
+	}
+	if err := validateLifecycleSyntax(cfg); err != nil {
+		return Config{}, "", err
+	}
+	return cfg, path, nil
+}
+
 func loadConfig(dir string) (Config, string, error) {
 	path := filepath.Join(dir, ConfigFile)
 	raw, err := os.ReadFile(path)
@@ -85,6 +108,24 @@ func validateRunSyntax(cfg Config) error {
 	}
 	for name, app := range cfg.Apps {
 		if err := validateRunValue(ConfigFile+" apps."+name+" run", app.Run); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateLifecycleSyntax(cfg Config) error {
+	if err := validateRunValue(ConfigFile+" start", cfg.Start); err != nil {
+		return err
+	}
+	if err := validateRunValue(ConfigFile+" stop", cfg.Stop); err != nil {
+		return err
+	}
+	for name, app := range cfg.Apps {
+		if err := validateRunValue(ConfigFile+" apps."+name+" start", app.Start); err != nil {
+			return err
+		}
+		if err := validateRunValue(ConfigFile+" apps."+name+" stop", app.Stop); err != nil {
 			return err
 		}
 	}
@@ -160,6 +201,93 @@ type Target struct {
 type RunTarget struct {
 	Name    string
 	Command string
+}
+
+type LifecycleAction string
+
+const (
+	ActionStart LifecycleAction = "start"
+	ActionStop  LifecycleAction = "stop"
+)
+
+type LifecycleTarget struct {
+	Name  string
+	Start string
+	Stop  string
+}
+
+func ResolveLifecycle(cfg Config, selector string, actions ...LifecycleAction) (LifecycleTarget, error) {
+	selector = strings.TrimSpace(selector)
+	name := selector
+	app := App{}
+	if selector == "" {
+		if hasDefaultLifecycleConfig(cfg) {
+			name = "default"
+		} else {
+			var ok bool
+			name, app, ok = firstConfiguredApp(cfg)
+			if !ok {
+				return LifecycleTarget{}, fmt.Errorf("%s default app is not configured", ConfigFile)
+			}
+		}
+	} else {
+		var ok bool
+		app, ok = cfg.Apps[selector]
+		if !ok {
+			return LifecycleTarget{}, fmt.Errorf("%s app %q is not configured", ConfigFile, selector)
+		}
+	}
+
+	target := LifecycleTarget{
+		Name:  name,
+		Start: strings.TrimSpace(firstNonEmpty(app.Start, cfg.Start)),
+		Stop:  strings.TrimSpace(firstNonEmpty(app.Stop, cfg.Stop)),
+	}
+	label := ConfigFile
+	if name != "default" {
+		label += " apps." + name
+	}
+	if len(actions) == 0 {
+		return LifecycleTarget{}, fmt.Errorf("local lifecycle action is required")
+	}
+	for _, action := range actions {
+		switch action {
+		case ActionStart:
+			if target.Start == "" {
+				return LifecycleTarget{}, fmt.Errorf("%s start is required", label)
+			}
+		case ActionStop:
+			if target.Stop == "" {
+				return LifecycleTarget{}, fmt.Errorf("%s stop is required", label)
+			}
+		default:
+			return LifecycleTarget{}, fmt.Errorf("unknown local lifecycle action %q", action)
+		}
+	}
+	return target, nil
+}
+
+func ResolveAllLifecycles(cfg Config, actions ...LifecycleAction) ([]LifecycleTarget, error) {
+	if len(cfg.Apps) == 0 {
+		target, err := ResolveLifecycle(cfg, "", actions...)
+		if err != nil {
+			return nil, err
+		}
+		return []LifecycleTarget{target}, nil
+	}
+	targets := make([]LifecycleTarget, 0, len(cfg.Apps))
+	for _, name := range orderedAppNames(cfg) {
+		target, err := ResolveLifecycle(cfg, name, actions...)
+		if err != nil {
+			return nil, err
+		}
+		targets = append(targets, target)
+	}
+	return targets, nil
+}
+
+func hasDefaultLifecycleConfig(cfg Config) bool {
+	return strings.TrimSpace(cfg.Start) != "" || strings.TrimSpace(cfg.Stop) != ""
 }
 
 func ResolveRun(cfg Config, selector string) (RunTarget, error) {

@@ -38,14 +38,13 @@ Usage:
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova run [app|all] [--remote]      # 默认在本地执行 stop + start；--remote 操作 Nova Agent
-  nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认第一个
+  nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认全部
   nova start [app|all] [--remote]
   nova stop [app|all] [--remote]
   nova restart [app|all] [--remote]
   nova status [app|all] [--remote]
   nova logs [app|all] [-f]
   nova list
-  nova remove [app]
 
 Local convenience:
   nova rollback [app]
@@ -170,17 +169,6 @@ func main() {
 		for _, item := range list {
 			fmt.Println(item)
 		}
-	case "remove":
-		target, err := loadTargetFromArgs(rest)
-		if err != nil {
-			fmt.Printf("remove failed: %v\n", err)
-			os.Exit(1)
-		}
-		if err := cli.Remove(ctx, target.App); err != nil {
-			fmt.Printf("remove failed: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Println("removed")
 	case "rollback":
 		fmt.Println("rollback is a local operation; not implemented in this milestone")
 	case "target":
@@ -303,7 +291,7 @@ func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed
 		return err
 	}
 	var resolved []project.LifecycleTarget
-	if parsed.Selector == "all" {
+	if parsed.Selector == "" || parsed.Selector == "all" {
 		resolved, err = project.ResolveAllLifecycles(cfg, requireStart)
 	} else {
 		var target project.LifecycleTarget
@@ -638,22 +626,11 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-func loadTargetFromArgs(args []string) (project.Target, error) {
-	targets, err := loadTargetsFromArgs(args)
-	if err != nil {
-		return project.Target{}, err
-	}
-	if len(targets) != 1 {
-		return project.Target{}, fmt.Errorf("expected exactly one configured app selector")
-	}
-	return targets[0], nil
-}
-
 func loadTargetsFromArgs(args []string) ([]project.Target, error) {
 	if len(args) > 1 {
 		return nil, fmt.Errorf("expected zero or one configured app selector")
 	}
-	selector := ""
+	selector := "all"
 	if len(args) == 1 {
 		selector = args[0]
 	}
@@ -697,6 +674,9 @@ func loadLogTargetsFromArgs(args []string) ([]project.Target, bool, error) {
 			return nil, false, fmt.Errorf("expected at most one configured app selector")
 		}
 		selector = arg
+	}
+	if follow && (selector == "" || selector == "all") {
+		return nil, false, fmt.Errorf("logs -f requires an explicit app selector")
 	}
 	targets, err := loadTargetsFromArgs(optionalArg(selector))
 	return targets, follow, err

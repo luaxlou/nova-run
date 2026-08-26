@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.1 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.2 bash
 ```
 
 ## 初始化项目
@@ -143,9 +143,9 @@ Nova Run 项目地址：
 7. `start` 是本地持续运行的前台命令，不能自行后台化。Nova 为每个应用创建按需 supervisor，`stop` 由 supervisor 终止完整进程组；`restart` 与 `run` 都先停止全部目标，再启动全部目标。`service.command` 是服务器生产运行命令，与本地命令互不复用。
 8. 完成代码修改并提交 Git 后，执行：
    `nova deploy`
-   不指定目标时，Nova 默认使用 `apps` 下声明的第一个应用。多子应用也可以显式执行：
+   不指定目标时，Nova 默认部署 `apps` 下的全部应用。只部署单个应用时显式执行：
    `nova deploy <app-selector>`
-   或部署全部：
+   也可以显式写出：
    `nova deploy all`
    Nova 会拒绝未提交的本地工作区，把当前 Git HEAD 短 SHA 作为部署版本提交给 Agent；如果目标应用已经是同一版本，命令会直接返回 `already latest`，不再构建和上传制品。
 9. 发布后执行：
@@ -161,8 +161,8 @@ Nova Run 项目地址：
 11. 需要控制进程时执行：
    本地：`nova start|stop|restart|run|status [app-selector|all]`
    远端：`nova start|stop|restart|run|status [app-selector|all] --remote`
-12. 需要移除应用时执行：
-   `nova remove [app-selector]`
+
+上述 deploy、生命周期、status 和 logs 命令在省略选择器时都默认操作全部应用。只有显式指定 `<app-selector>` 时才操作单个应用；跟随日志必须写成 `nova logs <app-selector> -f`。
 
 请遵守这些边界：
 - Nova Run 只负责单机部署、进程生命周期和日志查看。
@@ -236,7 +236,6 @@ nova status [app|all]
 nova status [app|all] --remote
 nova logs [app|all] [-f]
 nova list
-nova remove [app]
 ```
 
 ## 项目部署配置

@@ -354,14 +354,3 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	}
 	return items, nil
 }
-
-func (c *Client) Remove(ctx context.Context, name string) error {
-	if name == "" {
-		return fmt.Errorf("app name required")
-	}
-	payload, err := c.doRequest(ctx, http.MethodDelete, "/v1/apps/"+url.PathEscape(name), nil, "")
-	if err != nil {
-		return err
-	}
-	return c.parseResponse(payload, nil)
-}

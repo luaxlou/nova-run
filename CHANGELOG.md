@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-26
+
+### Changed
+- `deploy`、`start`、`stop`、`restart`、`run`、`status` 和 `logs` 未指定应用时，统一默认操作 `nova.yaml` 中的全部应用；显式指定应用时仍只操作该应用。
+- `nova logs -f` 必须显式指定单个应用，避免隐式跟随多应用日志。
+
+### Removed
+- 删除 `nova remove` CLI 及对应客户端方法，应用移除不再作为 Nova Run 的命令能力提供。
+
 ## [0.2.1] - 2026-08-26
 
 ### Changed

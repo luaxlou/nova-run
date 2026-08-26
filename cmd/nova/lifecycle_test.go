@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,23 @@ func TestRunAndRestartUseTheSameLocalManagerOperation(t *testing.T) {
 				t.Fatalf("calls=%v", manager.calls)
 			}
 		})
+	}
+}
+
+func TestLocalLifecycleDefaultsToAllConfiguredApps(t *testing.T) {
+	dir := writeLifecycleConfig(t, `apps:
+  api:
+    start: sleep 30
+  worker:
+    start: sleep 30
+`)
+	manager := &fakeLocalLifecycleManager{}
+	if err := runConfiguredLocalLifecycle(context.Background(), dir, "restart", lifecycleArgs{}, manager, &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"restart:api", "restart:worker"}
+	if !slices.Equal(manager.calls, want) {
+		t.Fatalf("calls=%v want=%v", manager.calls, want)
 	}
 }
 

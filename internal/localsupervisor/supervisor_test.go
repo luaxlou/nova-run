@@ -152,6 +152,17 @@ func TestReadinessFailureKillsTermIgnoringApplication(t *testing.T) {
 	}
 }
 
+func TestWaitForExitIsBounded(t *testing.T) {
+	waited := make(chan error)
+	started := time.Now()
+	if _, err := waitForExit(waited, 20*time.Millisecond); err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err=%v", err)
+	}
+	if elapsed := time.Since(started); elapsed < 20*time.Millisecond || elapsed > 500*time.Millisecond {
+		t.Fatalf("elapsed=%v", elapsed)
+	}
+}
+
 func lockedTestTarget(t *testing.T, command string) (Target, Paths, *Lock) {
 	t.Helper()
 	dir := t.TempDir()

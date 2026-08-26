@@ -16,6 +16,8 @@ import (
 	"time"
 )
 
+const defaultReapTimeout = 2 * time.Second
+
 func RunSupervisor(ctx context.Context, startupPath string, lockFile, readyFile *os.File) error {
 	if lockFile == nil || readyFile == nil {
 		return fmt.Errorf("local supervisor inherited descriptors are required")
@@ -56,7 +58,9 @@ func RunSupervisor(ctx context.Context, startupPath string, lockFile, readyFile 
 	running := stateForStartup(startup, PhaseRunning, os.Getpid(), cmd.Process.Pid)
 	if err := WriteState(startup.Paths.State, running); err != nil {
 		_ = signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
-		_ = cmd.Wait()
+		waited := make(chan error, 1)
+		go func() { waited <- cmd.Wait() }()
+		_, _ = waitForExit(waited, defaultReapTimeout)
 		return writeReadyError(readyFile, err)
 	}
 	if err := writeReady(readyFile, readyMessage{OK: true, State: running}); err != nil {
@@ -171,7 +175,11 @@ func superviseApplication(ctx context.Context, listener net.Listener, cmd *exec.
 			if err := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL); err != nil {
 				return err
 			}
-			waitErr = <-waited
+			var reapErr error
+			waitErr, reapErr = waitForExit(waited, defaultReapTimeout)
+			if reapErr != nil {
+				return reapErr
+			}
 		}
 	}
 
@@ -206,8 +214,19 @@ func terminateStartedApplication(cmd *exec.Cmd, grace time.Duration) (int, error
 		return processExitCode(cmd, waitErr), termErr
 	case <-timer.C:
 		killErr := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
-		waitErr := <-waited
-		return processExitCode(cmd, waitErr), errors.Join(termErr, killErr)
+		waitErr, reapErr := waitForExit(waited, defaultReapTimeout)
+		return processExitCode(cmd, waitErr), errors.Join(termErr, killErr, reapErr)
+	}
+}
+
+func waitForExit(waited <-chan error, timeout time.Duration) (error, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case waitErr := <-waited:
+		return waitErr, nil
+	case <-timer.C:
+		return nil, fmt.Errorf("application process reap timed out after %s", timeout)
 	}
 }
 

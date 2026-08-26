@@ -300,7 +300,9 @@ func (m *Manager) launchCommand(ctx context.Context, startup Startup, lock *Lock
 	state, err := readReady(ctx, readyRead)
 	if err != nil {
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		waited := make(chan error, 1)
+		go func() { waited <- cmd.Wait() }()
+		_, _ = waitForExit(waited, defaultReapTimeout)
 		return State{}, err
 	}
 	if err := cmd.Process.Release(); err != nil {

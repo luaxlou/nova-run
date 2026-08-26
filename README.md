@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.1.6 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.0 bash
 ```
 
 ## 初始化项目
@@ -110,14 +110,13 @@ Nova Run 项目地址：
 - GitHub: https://github.com/luaxlou/nova-run
 
 请把 Nova Run 当作这个项目的运行生命周期入口：
-1. 本地生命周期使用 `nova start|stop|restart|run`，不需要连接 Nova Agent；`run` 与 `restart` 等价。发布前再运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
+1. 本地生命周期和状态使用 `nova start|stop|restart|run|status`，不需要连接 Nova Agent；`run` 与 `restart` 等价。发布前再运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
 2. 识别项目的构建命令、运行入口和要发布的制品路径。
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
    ```yaml
    app: <app-name>
-   start: <local-start-command-that-returns>
-   stop: <local-stop-command>
+   start: <long-running-foreground-command>
    build:
      commands:
        - <build-command>
@@ -130,8 +129,7 @@ Nova Run 项目地址：
    ```yaml
    apps:
      <app-name>:
-       start: <local-start-command-that-returns>
-       stop: <local-stop-command>
+       start: <long-running-foreground-command>
        build:
          commands:
            - <build-command>
@@ -142,7 +140,7 @@ Nova Run 项目地址：
    ```
    `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
 6. 如果 `<artifact-path>` 还不存在，请补齐最小必要的构建命令，让构建结果稳定输出到该路径。
-7. `start` 和 `stop` 是本地生命周期命令；Nova 不保存 PID 或进程状态。`restart` 与 `run` 都依次执行 `stop`、`start`。`service.command` 是服务器生产运行命令，与本地命令互不复用。
+7. `start` 是本地持续运行的前台命令，不能自行后台化。Nova 为每个应用创建按需 supervisor，`stop` 由 supervisor 终止完整进程组；`restart` 与 `run` 都先停止全部目标，再启动全部目标。`service.command` 是服务器生产运行命令，与本地命令互不复用。
 8. 完成代码修改并提交 Git 后，执行：
    `nova deploy`
    不指定目标时，Nova 默认使用 `apps` 下声明的第一个应用。多子应用也可以显式执行：
@@ -151,18 +149,18 @@ Nova Run 项目地址：
    `nova deploy all`
    Nova 会拒绝未提交的本地工作区，把当前 Git HEAD 短 SHA 作为部署版本提交给 Agent；如果目标应用已经是同一版本，命令会直接返回 `already latest`，不再构建和上传制品。
 9. 发布后执行：
-   `nova status`
+   `nova status --remote`
    或：
-   `nova status <app-selector>`
+   `nova status <app-selector> --remote`
    或：
-   `nova status all`
+   `nova status all --remote`
 10. 需要看日志时执行：
    `nova logs`
    或：
    `nova logs <app-selector> -f`
 11. 需要控制进程时执行：
-   本地：`nova start|stop|restart|run [app-selector|all]`
-   远端：`nova start|stop|restart|run --remote [app-selector|all]`
+   本地：`nova start|stop|restart|run|status [app-selector|all]`
+   远端：`nova start|stop|restart|run|status [app-selector|all] --remote`
 12. 需要移除应用时执行：
    `nova remove [app-selector]`
 
@@ -177,39 +175,37 @@ Nova Run 项目地址：
 
 ## 本地生命周期
 
-在 `nova.yaml` 中配置本地启动和停止命令：
+在 `nova.yaml` 中配置持续运行的本地前台命令：
 
 ```yaml
-start: scripts/start-local.sh
-stop: scripts/stop-local.sh
+start: exec ./bin/app
 ```
 
-Nova 是无状态工具：它不会创建 supervisor、PID 文件或后台进程记录，只会通过 `sh -lc` 在 `nova.yaml` 所在目录忠实执行命令，并传递标准输入输出、环境变量和退出码。若应用需要持续后台运行，`start` 命令自身必须完成后台化并返回。
+Nova 为每个运行中的应用创建一个 detached supervisor；没有应用运行时，不保留全局 daemon。`start` 通过 `sh -lc` 在 `nova.yaml` 所在目录执行并继承调用环境，但命令本身不能 daemonize。shell 脚本建议最后使用 `exec` 启动应用。
 
 ```bash
-nova start                 # 执行 start
-nova stop                  # 执行 stop
-nova restart               # 依次执行 stop、start
+nova start                 # 启动本地 supervisor，应用就绪后立即返回
+nova stop                  # TERM 完整进程组，三秒后仍未退出则 KILL
+nova restart               # 先停止全部目标，再启动全部目标
 nova run                   # 与 restart 完全等价
+nova status                # 查询本地 supervisor 或最终退出状态
 ```
 
-这些本地命令不依赖 `nova init`、Nova Agent Endpoint 或访问令牌。`stop` 失败时，`restart` 和 `run` 不会继续执行 `start`。
+这些本地命令不依赖 `nova init`、Nova Agent Endpoint 或访问令牌。应用 stdout/stderr 会追加到 start 输出的 `output.log`。应用自然退出后，supervisor 保存最终状态和退出码并退出，不自动重启。
 
 多应用项目可以分别配置：
 
 ```yaml
 apps:
   api:
-    start: scripts/start-api.sh
-    stop: scripts/stop-api.sh
+    start: exec ./bin/api
   web:
-    start: scripts/start-web.sh
-    stop: scripts/stop-web.sh
+    start: exec npm run dev
 ```
 
-`all` 按 YAML 声明顺序执行；restart/run 会先停止全部目标，再启动全部目标。Nova 会在执行前校验全部目标，任一命令失败后停止。
+`all` 按 YAML 声明顺序执行；restart/run 会先停止全部目标，再启动全部目标。Nova 会在变更任何进程前校验全部 start；批量启动中途失败时，只回滚本次新启动的 supervisor。
 
-> **v0.1.14 迁移提示：** 旧的 `run: <command>` 配置不再支持。远程服务控制也不再是默认行为，已有脚本必须给远程命令增加 `--remote`。
+> **v0.2.0 迁移提示：** 删除本地 `stop:`；把会自行后台化的 start 改成持续运行的前台命令。旧的 `run: <command>` 仍不支持。远程生命周期和状态命令必须增加 `--remote`。
 
 ## 管理项目
 
@@ -226,6 +222,7 @@ nova start [app|all] --remote
 nova stop [app|all] --remote
 nova restart [app|all] --remote
 nova status [app|all]
+nova status [app|all] --remote
 nova logs [app|all] [-f]
 nova list
 nova remove [app]
@@ -237,8 +234,7 @@ nova remove [app]
 
 ```yaml
 app: sbom-platform
-start: scripts/start-local.sh
-stop: scripts/stop-local.sh
+start: exec ./bin/sbom-platform
 build:
   commands:
     - npm run build
@@ -254,8 +250,7 @@ service:
 ```yaml
 apps:
   sbom-platform-backend:
-    start: scripts/start-backend.sh
-    stop: scripts/stop-backend.sh
+    start: exec ./bin/backend
     build:
       commands:
         - scripts/build-backend-artifact.sh
@@ -266,8 +261,7 @@ apps:
       env:
         CONFIG_PATH: ./config.yaml
   sbom-platform-worker:
-    start: scripts/start-worker.sh
-    stop: scripts/stop-worker.sh
+    start: exec ./bin/worker
     build:
       commands:
         - scripts/build-worker-artifact.sh
@@ -283,13 +277,13 @@ apps:
 nova deploy sbom-platform-backend
 nova deploy all
 nova restart --remote sbom-platform-worker
-nova status all
+nova status all --remote
 nova logs sbom-platform-backend -f
 ```
 
 上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品路径；这个路径可以是目录，也可以是单个文件。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
 
-`nova deploy` 只接受干净的 Git 工作区。每次成功部署都会把当前 Git HEAD 短 SHA 写入服务端部署元数据；`nova status` 会展示该 `version`。当本地版本与服务端已部署版本一致时，Nova 返回 `already latest`，跳过构建和上传。
+`nova deploy` 只接受干净的 Git 工作区。每次成功部署都会把当前 Git HEAD 短 SHA 写入服务端部署元数据；`nova status --remote` 会展示该 `version`。当本地版本与服务端已部署版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
 ## 制品清单
 

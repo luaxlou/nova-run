@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-26
+
+### Added
+- 为每个本地应用增加独立的按需 supervisor；没有应用运行时，不保留全局 Nova daemon。
+- `nova status [app|all]` 默认读取本地 supervisor 的可信运行状态，`status --remote` 保留 Nova Agent 状态查询。
+- 本地运行状态、退出码和日志保存在用户缓存目录；`start` 返回时会输出对应的 `output.log` 路径。
+- 使用独占锁、Unix socket、随机 nonce 和原子状态文件确认进程所有权，不根据 PID 文件单独发送信号。
+
+### Changed
+- **破坏性变更：** 本地 `start` 必须是持续运行的前台命令；Nova 会将它置于独立进程组并在后台监管。
+- **破坏性变更：** 本地 `stop:` 配置已移除；`nova stop` 由 supervisor 依次发送 TERM，并在三秒后升级为 KILL。
+- `nova restart` 与 `nova run` 仍完全等价：先停止全部选中应用，再按 YAML 声明顺序启动全部应用。
+- 本地 start/stop/restart/run/status 都不读取 Agent Endpoint 或 Token；远端生命周期与状态操作必须显式增加 `--remote`。
+- 应用自然退出后 supervisor 会保存最终状态并退出，不执行自动重启。
+
+### Removed
+- 删除 v0.1.14 的同步 `internal/localcommand` 执行器和项目自定义本地 stop 命令。
+
 ## [0.1.14] - 2026-08-25
 
 ### Added

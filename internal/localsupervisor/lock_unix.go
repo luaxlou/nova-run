@@ -54,10 +54,9 @@ func (l *Lock) Close() error {
 		if l.file == nil {
 			return
 		}
-		if err := unix.Flock(int(l.file.Fd()), unix.LOCK_UN); err != nil {
-			l.err = fmt.Errorf("unlock local supervisor runtime: %w", err)
-		}
-		if err := l.file.Close(); err != nil && l.err == nil {
+		// Closing, rather than explicitly unlocking, preserves ownership when
+		// this open file description has been inherited by a supervisor child.
+		if err := l.file.Close(); err != nil {
 			l.err = fmt.Errorf("close local supervisor lock: %w", err)
 		}
 	})

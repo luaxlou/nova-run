@@ -8,6 +8,12 @@
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
 ```
 
+如果目标位置的 `nova` 已经与下载版本一致，脚本会提示无需更新并退出。需要强制重新安装时使用：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- --force
+```
+
 ## install-agent.sh
 
 在 Linux 服务器上安装 Nova Agent。安装完成后，脚本会输出 `nova init` 需要填写的 Nova Agent Endpoint 和访问令牌位置。

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-26
+
+### Changed
+- `install-cli.sh` 下载后会与目标位置现有的可执行文件进行比较；内容相同时提示已是最新版本并退出，不再重复覆盖。
+- 安装脚本新增 `--force`，用于即使内容相同也强制重新安装；未知参数会直接报错。
+
 ## [0.2.2] - 2026-08-26
 
 ### Changed

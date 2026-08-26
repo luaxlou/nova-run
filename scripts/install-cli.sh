@@ -4,6 +4,18 @@ set -euo pipefail
 REPO="${NOVA_REPO:-luaxlou/nova-run}"
 VERSION="${NOVA_VERSION:-latest}"
 INSTALL_DIR="${NOVA_INSTALL_DIR:-}"
+FORCE=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    *)
+      echo "Unknown argument: $arg" >&2
+      echo "Usage: install-cli.sh [--force]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 case "$(uname -s)" in
   Linux) OS="linux" ;;
@@ -59,8 +71,15 @@ if [ ! -w "$INSTALL_DIR" ]; then
   exit 1
 fi
 
-mv "$TMP_FILE" "${INSTALL_DIR}/nova"
-echo "nova installed to ${INSTALL_DIR}/nova"
+TARGET="${INSTALL_DIR}/nova"
+if [ "$FORCE" -eq 0 ] && [ -x "$TARGET" ] && cmp -s "$TMP_FILE" "$TARGET"; then
+  echo "nova is already the latest version at ${TARGET}; no update needed."
+  echo "Run again with --force to reinstall it."
+  exit 0
+fi
+
+mv "$TMP_FILE" "$TARGET"
+echo "nova installed to ${TARGET}"
 
 case ":${PATH}:" in
   *":${INSTALL_DIR}:"*) ;;

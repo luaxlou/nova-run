@@ -20,12 +20,18 @@ Nova 不提供 `nova update` 命令。更新本地客户端时，重新执行安
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
 ```
 
-如果本机已经安装过 `nova`，脚本会优先覆盖当前 `PATH` 中正在使用的 `nova` 所在目录。例如当前命令来自 `/opt/homebrew/bin/nova`，脚本会优先更新这个文件。
+如果本机已经安装过 `nova`，脚本会优先检查当前 `PATH` 中正在使用的 `nova` 所在目录。例如当前命令来自 `/opt/homebrew/bin/nova`，脚本会检查这个文件；如果下载内容与本地可执行文件一致，会提示已经是最新版本并停止，不再重复覆盖。
+
+需要强制重新安装时执行：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- --force
+```
 
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.2 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.3 bash
 ```
 
 ## 初始化项目

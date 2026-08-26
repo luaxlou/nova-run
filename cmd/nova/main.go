@@ -48,7 +48,6 @@ Usage:
   nova restart [app|all] [-r|--remote]
   nova status [app|all] [-r|--remote]
   nova logs [app|all] [-f|--follow]
-  nova list
 
 Local convenience:
   nova rollback [app]
@@ -99,6 +98,10 @@ func main() {
 			os.Exit(cliExitCode(err))
 		}
 		return
+	}
+	if len(args) >= 2 && !isTopLevelCommand(args[1]) {
+		usage()
+		os.Exit(1)
 	}
 	if len(args) >= 2 {
 		if err := autoBootstrapRuntimeConfig(args[1]); err != nil {
@@ -168,15 +171,6 @@ func main() {
 				}
 			}
 		}
-	case "list":
-		list, err := cli.List(ctx)
-		if err != nil {
-			fmt.Printf("list failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, item := range list {
-			fmt.Println(item)
-		}
 	case "rollback":
 		fmt.Println("rollback is a local operation; not implemented in this milestone")
 	case "target":
@@ -241,6 +235,15 @@ type lifecycleArgs struct {
 func isLifecycleCommand(action string) bool {
 	switch action {
 	case "start", "stop", "restart", "run", "status":
+		return true
+	default:
+		return false
+	}
+}
+
+func isTopLevelCommand(command string) bool {
+	switch command {
+	case "init", "agent", "deploy", "logs", "rollback", "target":
 		return true
 	default:
 		return false

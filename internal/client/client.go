@@ -339,18 +339,3 @@ func (c *Client) LogsStream(ctx context.Context, name string, out io.Writer) err
 	path := "/v1/apps/" + url.PathEscape(name) + "/logs?follow=true"
 	return c.doRequestStream(ctx, http.MethodGet, path, nil, "", out)
 }
-
-func (c *Client) List(ctx context.Context) ([]string, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("context required")
-	}
-	payload, err := c.doRequest(ctx, http.MethodGet, "/v1/apps", nil, "")
-	if err != nil {
-		return nil, err
-	}
-	var items []string
-	if err := c.parseResponse(payload, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
-}

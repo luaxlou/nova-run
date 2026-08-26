@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-08-26
+
+### Removed
+- 删除语义重复的 `nova list` 命令及客户端方法；应用及运行状态统一通过本地 `nova status` 或远端 `nova status -r` 查看。
+- 未知命令会在 bootstrap 前直接显示帮助并退出，不再触发配置初始化或 Agent 访问。
+
 ## [0.2.5] - 2026-08-26
 
 ### Added

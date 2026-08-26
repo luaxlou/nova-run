@@ -31,7 +31,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.5 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.6 bash
 ```
 
 ## 初始化项目
@@ -94,7 +94,7 @@ Nova Run 项目地址：
    `nova init`
    Endpoint 填 `http://<server>:32102`，Token 填上一步读取到的值。
 9. 用下面命令验证：
-   `nova list`
+   `nova target list`
 
 请遵守这些边界：
 - Nova Agent 只安装在 Linux 服务器上。
@@ -116,7 +116,7 @@ Nova Run 项目地址：
 - GitHub: https://github.com/luaxlou/nova-run
 
 请把 Nova Run 当作这个项目的运行生命周期入口：
-1. 本地生命周期和状态使用 `nova start|stop|restart|run|status`，不需要连接 Nova Agent；`run` 与 `restart` 等价。发布前再运行 `nova target list` 和 `nova list`，确认当前项目已经能连接 Nova Agent。
+1. 本地生命周期和状态使用 `nova start|stop|restart|run|status`，不需要连接 Nova Agent；`run` 与 `restart` 等价。发布前运行 `nova target list` 确认目标配置；完成 `nova.yaml` 后运行 `nova status -r` 验证 Agent 连接和远端应用状态。
 2. 识别项目的构建命令、运行入口和要发布的制品路径。
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
@@ -241,7 +241,6 @@ nova restart [app|all] --remote
 nova status [app|all]
 nova status [app|all] --remote
 nova logs [app|all] [-f]
-nova list
 nova version | -v | --version
 nova -h | --help
 ```

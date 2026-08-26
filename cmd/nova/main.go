@@ -23,7 +23,7 @@ import (
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/artifact"
 	"github.com/luaxlou/glow-ops/internal/client"
-	"github.com/luaxlou/glow-ops/internal/localcommand"
+	"github.com/luaxlou/glow-ops/internal/localsupervisor"
 	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 )
@@ -40,7 +40,7 @@ Usage:
   nova start [app|all] [--remote]
   nova stop [app|all] [--remote]
   nova restart [app|all] [--remote]
-  nova status [app|all]
+  nova status [app|all] [--remote]
   nova logs [app|all] [-f]
   nova list
   nova remove [app]
@@ -55,6 +55,13 @@ Local convenience:
 
 func main() {
 	args := os.Args
+	if len(args) >= 2 && args[1] == "__nova_supervisor" {
+		if err := runSupervisorChild(args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "local supervisor failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(args) >= 2 && isHelp(args[1]) {
 		usage()
 		return
@@ -68,13 +75,15 @@ func main() {
 				var targets []project.Target
 				targets, err = loadTargetsFromArgs(optionalArg(parsed.Selector))
 				if err == nil {
-					err = runConfiguredRemoteLifecycle(context.Background(), client.NewClient(), action, targets)
+					err = runConfiguredRemoteLifecycle(context.Background(), client.NewClient(), action, targets, os.Stdout)
 				}
 			}
 		} else if err == nil {
-			err = runConfiguredLocalLifecycle(context.Background(), ".", action, parsed, localcommand.Streams{
-				Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr,
-			})
+			var manager *localsupervisor.Manager
+			manager, err = localsupervisor.NewManager()
+			if err == nil {
+				err = runConfiguredLocalLifecycle(context.Background(), ".", action, parsed, manager, os.Stdout)
+			}
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "%s failed: %v\n", action, err)
@@ -119,20 +128,6 @@ func main() {
 		if err := runConfiguredDeploy(ctx, cli, rest); err != nil {
 			fmt.Printf("deploy failed: %v\n", err)
 			os.Exit(1)
-		}
-	case "status":
-		targets, err := loadTargetsFromArgs(rest)
-		if err != nil {
-			fmt.Printf("status failed: %v\n", err)
-			os.Exit(1)
-		}
-		for _, target := range targets {
-			status, err := cli.Status(ctx, target.App)
-			if err != nil {
-				fmt.Printf("status failed: %v\n", err)
-				os.Exit(1)
-			}
-			fmt.Println(status)
 		}
 	case "logs":
 		targets, follow, err := loadLogTargetsFromArgs(rest)
@@ -215,6 +210,18 @@ func main() {
 	}
 }
 
+func runSupervisorChild(args []string) error {
+	if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+		return fmt.Errorf("local supervisor startup path is required")
+	}
+	lock := os.NewFile(uintptr(3), "nova-supervisor-lock")
+	ready := os.NewFile(uintptr(4), "nova-supervisor-ready")
+	if lock == nil || ready == nil {
+		return fmt.Errorf("local supervisor inherited descriptors are unavailable")
+	}
+	return localsupervisor.RunSupervisor(context.Background(), args[0], lock, ready)
+}
+
 func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string) error {
 	targets, err := loadTargetsFromArgs(args)
 	if err != nil {
@@ -235,7 +242,7 @@ type lifecycleArgs struct {
 
 func isLifecycleCommand(action string) bool {
 	switch action {
-	case "start", "stop", "restart", "run":
+	case "start", "stop", "restart", "run", "status":
 		return true
 	default:
 		return false
@@ -264,21 +271,28 @@ func parseLifecycleArgs(args []string) (lifecycleArgs, error) {
 	return parsed, nil
 }
 
-func lifecycleActions(action string) ([]project.LifecycleAction, error) {
+func lifecycleNeedsStart(action string) (bool, error) {
 	switch action {
 	case "start":
-		return []project.LifecycleAction{project.ActionStart}, nil
-	case "stop":
-		return []project.LifecycleAction{project.ActionStop}, nil
+		return true, nil
 	case "restart", "run":
-		return []project.LifecycleAction{project.ActionStop, project.ActionStart}, nil
+		return true, nil
+	case "stop", "status":
+		return false, nil
 	default:
-		return nil, fmt.Errorf("unknown lifecycle action %q", action)
+		return false, fmt.Errorf("unknown lifecycle action %q", action)
 	}
 }
 
-func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed lifecycleArgs, streams localcommand.Streams) error {
-	actions, err := lifecycleActions(action)
+type localLifecycleManager interface {
+	StartAll(context.Context, []localsupervisor.Target) ([]localsupervisor.Result, error)
+	StopAll(context.Context, []localsupervisor.Target) ([]localsupervisor.Result, error)
+	RestartAll(context.Context, []localsupervisor.Target) ([]localsupervisor.Result, error)
+	Status(context.Context, localsupervisor.Target) (localsupervisor.Status, error)
+}
+
+func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed lifecycleArgs, manager localLifecycleManager, stdout io.Writer) error {
+	requireStart, err := lifecycleNeedsStart(action)
 	if err != nil {
 		return err
 	}
@@ -286,42 +300,71 @@ func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(streams.Stdout, "project config: %s\n", path)
-
-	var targets []project.LifecycleTarget
+	var resolved []project.LifecycleTarget
 	if parsed.Selector == "all" {
-		targets, err = project.ResolveAllLifecycles(cfg, actions...)
+		resolved, err = project.ResolveAllLifecycles(cfg, requireStart)
 	} else {
 		var target project.LifecycleTarget
-		target, err = project.ResolveLifecycle(cfg, parsed.Selector, actions...)
-		targets = []project.LifecycleTarget{target}
+		target, err = project.ResolveLifecycle(cfg, parsed.Selector, requireStart)
+		resolved = []project.LifecycleTarget{target}
 	}
 	if err != nil {
 		return err
 	}
-
-	commands := make([]localcommand.Command, 0, len(targets)*len(actions))
-	for _, lifecycleAction := range actions {
-		for _, target := range targets {
-			command := target.Start
-			if lifecycleAction == project.ActionStop {
-				command = target.Stop
-			}
-			commands = append(commands, localcommand.Command{
-				Target: target.Name, Action: string(lifecycleAction), ShellCommand: command,
-			})
-		}
+	canonical, err := filepath.Abs(path)
+	if err != nil {
+		return fmt.Errorf("resolve project config path: %w", err)
 	}
-	return localcommand.Run(ctx, commands, filepath.Dir(path), streams)
+	if evaluated, evalErr := filepath.EvalSymlinks(canonical); evalErr == nil {
+		canonical = evaluated
+	} else {
+		return fmt.Errorf("resolve project config symlinks: %w", evalErr)
+	}
+	fmt.Fprintf(stdout, "project config: %s\n", canonical)
+	targets := make([]localsupervisor.Target, 0, len(resolved))
+	for _, target := range resolved {
+		targets = append(targets, localsupervisor.Target{
+			ProjectPath: canonical, Name: target.Name, Dir: filepath.Dir(canonical), Start: target.Start,
+		})
+	}
+	if action == "status" {
+		for _, target := range targets {
+			status, statusErr := manager.Status(ctx, target)
+			if statusErr != nil {
+				return statusErr
+			}
+			fmt.Fprintln(stdout, status.Line())
+		}
+		return nil
+	}
+	var results []localsupervisor.Result
+	switch action {
+	case "start":
+		results, err = manager.StartAll(ctx, targets)
+	case "stop":
+		results, err = manager.StopAll(ctx, targets)
+	case "restart", "run":
+		results, err = manager.RestartAll(ctx, targets)
+	default:
+		return fmt.Errorf("unknown local lifecycle action %q", action)
+	}
+	if err != nil {
+		return err
+	}
+	for _, result := range results {
+		fmt.Fprintf(stdout, "app=%s state=%s logs=%s already=%t\n", result.App, result.State, result.OutputPath, result.Already)
+	}
+	return nil
 }
 
 type remoteLifecycleClient interface {
 	Start(context.Context, string) error
 	Stop(context.Context, string) error
 	Restart(context.Context, string) error
+	Status(context.Context, string) (string, error)
 }
 
-func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient, action string, targets []project.Target) error {
+func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient, action string, targets []project.Target, stdout io.Writer) error {
 	for _, target := range targets {
 		var err error
 		switch action {
@@ -331,13 +374,21 @@ func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient
 			err = cli.Stop(ctx, target.App)
 		case "restart", "run":
 			err = cli.Restart(ctx, target.App)
+		case "status":
+			var status string
+			status, err = cli.Status(ctx, target.App)
+			if err == nil {
+				fmt.Fprintln(stdout, status)
+			}
 		default:
 			return fmt.Errorf("unknown remote lifecycle action %q", action)
 		}
 		if err != nil {
 			return err
 		}
-		fmt.Printf("%s %s command sent\n", target.App, action)
+		if action != "status" {
+			fmt.Fprintf(stdout, "%s %s command sent\n", target.App, action)
+		}
 	}
 	return nil
 }

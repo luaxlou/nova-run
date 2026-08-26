@@ -20,10 +20,12 @@ func TestInstallCLIInstallsDownloadedBinary(t *testing.T) {
 	}
 }
 
-func TestInstallCLISkipsIdenticalExecutable(t *testing.T) {
+func TestInstallCLISkipsMatchingPinnedVersionBeforeDownload(t *testing.T) {
 	env := newInstallerEnv(t, "nova-v1")
 	wantTime := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
-	env.writeInstalled(t, "nova-v1", 0o755)
+	env.version = "v1"
+	env.failDownload = true
+	env.writeVersionedNova(t, "1")
 	if err := os.Chtimes(env.installedPath, wantTime, wantTime); err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +46,27 @@ func TestInstallCLISkipsIdenticalExecutable(t *testing.T) {
 	}
 }
 
+func TestInstallCLISkipsLatestVersionBeforeBinaryDownload(t *testing.T) {
+	env := newInstallerEnv(t, "new-binary")
+	env.version = ""
+	env.latestVersion = "v1.2.3"
+	env.failDownload = true
+	env.writeVersionedNova(t, "1.2.3")
+
+	output, err := env.run()
+	if err != nil {
+		t.Fatalf("install failed: %v\n%s", err, output)
+	}
+	if !strings.Contains(output, "already the latest") {
+		t.Fatalf("output=%q", output)
+	}
+}
+
 func TestInstallCLIForceOverwritesIdenticalExecutable(t *testing.T) {
 	env := newInstallerEnv(t, "nova-v1")
 	oldTime := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
-	env.writeInstalled(t, "nova-v1", 0o755)
+	env.version = "v1"
+	env.writeVersionedNova(t, "1")
 	if err := os.Chtimes(env.installedPath, oldTime, oldTime); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +99,9 @@ type installerEnv struct {
 	installedPath  string
 	downloadPath   string
 	fakeCommandDir string
+	version        string
+	latestVersion  string
+	failDownload   bool
 }
 
 func newInstallerEnv(t *testing.T, downloaded string) *installerEnv {
@@ -107,6 +129,14 @@ while [ "$#" -gt 0 ]; do
   fi
   shift
 done
+if [ -z "$output" ]; then
+  printf '{"tag_name":"%s"}\n' "$NOVA_TEST_LATEST_VERSION"
+  exit 0
+fi
+if [ "$NOVA_TEST_FAIL_DOWNLOAD" = "1" ]; then
+  echo "binary download must not happen" >&2
+  exit 42
+fi
 cp "$NOVA_TEST_DOWNLOAD" "$output"
 `
 	if err := os.WriteFile(filepath.Join(fakeCommandDir, "curl"), []byte(fakeCurl), 0o755); err != nil {
@@ -116,6 +146,7 @@ cp "$NOVA_TEST_DOWNLOAD" "$output"
 		t: t, scriptPath: scriptPath, installDir: installDir,
 		installedPath: filepath.Join(installDir, "nova"),
 		downloadPath:  downloadPath, fakeCommandDir: fakeCommandDir,
+		version: "v1", latestVersion: "v1",
 	}
 }
 
@@ -124,11 +155,27 @@ func (e *installerEnv) run(args ...string) (string, error) {
 	cmd := exec.Command("bash", append([]string{e.scriptPath}, args...)...)
 	cmd.Env = append(os.Environ(),
 		"NOVA_INSTALL_DIR="+e.installDir,
+		"NOVA_VERSION="+e.version,
 		"NOVA_TEST_DOWNLOAD="+e.downloadPath,
+		"NOVA_TEST_LATEST_VERSION="+e.latestVersion,
+		"NOVA_TEST_FAIL_DOWNLOAD="+boolEnv(e.failDownload),
 		"PATH="+e.fakeCommandDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 	)
 	output, err := cmd.CombinedOutput()
 	return string(output), err
+}
+
+func (e *installerEnv) writeVersionedNova(t *testing.T, version string) {
+	t.Helper()
+	content := "#!/bin/sh\nif [ \"$1\" = version ] || [ \"$1\" = --version ]; then\n  echo 'nova " + version + "'\n  exit 0\nfi\nexit 1\n"
+	e.writeInstalled(t, content, 0o755)
+}
+
+func boolEnv(value bool) string {
+	if value {
+		return "1"
+	}
+	return "0"
 }
 
 func (e *installerEnv) writeInstalled(t *testing.T, content string, mode os.FileMode) {

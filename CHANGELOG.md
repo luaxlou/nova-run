@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-08-26
+
+### Added
+- 新增 `nova version` 和 `nova --version`，Release 构建会把发布 tag 注入二进制。
+
+### Changed
+- `install-cli.sh` 在下载二进制前先比较本地与目标版本；版本一致时不再请求 Release 二进制。
+- latest 安装只先读取 GitHub Release 版本元数据；`NOVA_VERSION=v...` 直接与指定版本比较，`--force` 跳过比较并强制下载。
+
 ## [0.2.3] - 2026-08-26
 
 ### Changed

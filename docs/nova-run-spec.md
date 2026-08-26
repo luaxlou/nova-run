@@ -15,6 +15,8 @@ Nova 提供两条路径：
 
 Nova 不管理数据库、缓存、Ingress、反向代理、域名、TLS、负载均衡或服务发现。远端运行真相来自 systemd，远端日志真相来自 journald。
 
+`nova version` 与 `nova --version` 输出 Release 构建时注入的 CLI 版本；本地开发构建默认显示 `dev`。客户端安装器先使用该版本与目标 Release 比较，仅在版本不同、旧客户端不支持版本查询或指定 `--force` 时下载二进制。
+
 ## 项目配置
 
 单应用：

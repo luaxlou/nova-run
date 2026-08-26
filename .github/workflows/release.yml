@@ -43,15 +43,21 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
         run: |
           set -euo pipefail
           mkdir -p dist
+          release_version="${RELEASE_TAG#v}"
+          if [ -z "$release_version" ]; then
+            echo "Release version is empty."
+            exit 1
+          fi
           if [ "$GOOS" = "linux" ]; then
             export CGO_ENABLED=0
           fi
           go build \
             -trimpath \
-            -ldflags "-s -w" \
+            -ldflags "-s -w -X main.version=${release_version}" \
             -o dist/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/nova
           file dist/nova-${{ matrix.goos }}-${{ matrix.goarch }}

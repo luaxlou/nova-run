@@ -30,12 +30,15 @@ import (
 	"github.com/luaxlou/glow-ops/internal/statusview"
 )
 
+var version = "dev"
+
 func usage() {
 	fmt.Print(`nova (Nova Run CLI)
 
 Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
+  nova version        # 输出当前 Nova CLI 版本
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova run [app|all] [--remote]      # 默认在本地执行 stop + start；--remote 操作 Nova Agent
   nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认全部
@@ -61,6 +64,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "local supervisor failed: %v\n", err)
 			os.Exit(1)
 		}
+		return
+	}
+	if len(args) == 2 && (args[1] == "version" || args[1] == "--version") {
+		fmt.Printf("nova %s\n", version)
 		return
 	}
 	if len(args) >= 2 && isHelp(args[1]) {

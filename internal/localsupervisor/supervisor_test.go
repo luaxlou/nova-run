@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -43,6 +44,31 @@ func TestRunSupervisorCapturesOutputAndPersistsExit(t *testing.T) {
 	}
 }
 
+func TestRunSupervisorSecuresExistingOutputLog(t *testing.T) {
+	target, paths, lock := lockedTestTarget(t, "exit 0")
+	if err := os.WriteFile(paths.Output, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	startupPath := writeTestStartup(t, target, paths, 200*time.Millisecond)
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- RunSupervisor(context.Background(), startupPath, lock.File(), readyWrite) }()
+	_ = readReadyState(t, readyRead)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(paths.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("output mode=%v", info.Mode().Perm())
+	}
+}
+
 func TestStopRequestTerminatesWholeProcessGroup(t *testing.T) {
 	target, paths, state, done := startTestSupervisor(t, "sh -c 'sleep 30 & echo $! > child.pid; wait'")
 	childPID := readPIDEventually(t, filepath.Join(target.Dir, "child.pid"))
@@ -75,6 +101,54 @@ func TestQueryRejectsMismatchedNonce(t *testing.T) {
 	}
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestStopAcknowledgedBeforeSupervisorReturns(t *testing.T) {
+	previousProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previousProcs)
+	_, paths, state, done := startTestSupervisor(t, "sleep 30")
+	stopDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		stopDone <- requestStop(ctx, paths, state)
+	}()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-stopDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("supervisor returned before stop acknowledgement was delivered")
+	}
+}
+
+func TestReadinessFailureKillsTermIgnoringApplication(t *testing.T) {
+	target, paths, lock := lockedTestTarget(t, "trap '' TERM; while :; do sleep 1; done")
+	startupPath := writeTestStartup(t, target, paths, 100*time.Millisecond)
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = readyRead.Close()
+	done := make(chan error, 1)
+	go func() { done <- RunSupervisor(context.Background(), startupPath, lock.File(), readyWrite) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("readiness failure unexpectedly succeeded")
+		}
+	case <-time.After(time.Second):
+		state, ok, _ := ReadState(paths.State)
+		if ok && state.AppPID > 0 {
+			_ = syscall.Kill(-state.AppPID, syscall.SIGKILL)
+		}
+		<-done
+		t.Fatal("supervisor hung after readiness pipe failure")
 	}
 }
 

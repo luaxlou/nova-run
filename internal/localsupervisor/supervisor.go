@@ -39,6 +39,9 @@ func RunSupervisor(ctx context.Context, startupPath string, lockFile, readyFile 
 		return writeReadyError(readyFile, fmt.Errorf("open local supervisor output: %w", err))
 	}
 	defer output.Close()
+	if err := output.Chmod(0o600); err != nil {
+		return writeReadyError(readyFile, fmt.Errorf("secure local supervisor output: %w", err))
+	}
 
 	starting := stateForStartup(startup, PhaseStarting, os.Getpid(), 0)
 	if err := WriteState(startup.Paths.State, starting); err != nil {
@@ -57,9 +60,10 @@ func RunSupervisor(ctx context.Context, startupPath string, lockFile, readyFile 
 		return writeReadyError(readyFile, err)
 	}
 	if err := writeReady(readyFile, readyMessage{OK: true, State: running}); err != nil {
-		_ = signalProcessGroup(cmd.Process.Pid, syscall.SIGTERM)
-		_ = cmd.Wait()
-		return err
+		exitCode, stopErr := terminateStartedApplication(cmd, startup.StopGrace)
+		final := finalState(running, PhaseError, exitCode)
+		stateErr := WriteState(startup.Paths.State, final)
+		return errors.Join(err, stopErr, stateErr)
 	}
 	return superviseApplication(ctx, listener, cmd, startup, running)
 }
@@ -182,8 +186,29 @@ func superviseApplication(ctx context.Context, listener net.Listener, cmd *exec.
 	}
 	if request != nil {
 		request.response <- final
+		select {
+		case <-request.delivered:
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("local supervisor stop acknowledgement timed out")
+		}
 	}
 	return nil
+}
+
+func terminateStartedApplication(cmd *exec.Cmd, grace time.Duration) (int, error) {
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	termErr := signalProcessGroup(cmd.Process.Pid, syscall.SIGTERM)
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+	select {
+	case waitErr := <-waited:
+		return processExitCode(cmd, waitErr), termErr
+	case <-timer.C:
+		killErr := signalProcessGroup(cmd.Process.Pid, syscall.SIGKILL)
+		waitErr := <-waited
+		return processExitCode(cmd, waitErr), errors.Join(termErr, killErr)
+	}
 }
 
 func processExitCode(cmd *exec.Cmd, waitErr error) int {

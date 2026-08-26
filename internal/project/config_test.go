@@ -274,6 +274,16 @@ func TestResolveLifecycleAllowsIdentityOnlyLookup(t *testing.T) {
 	}
 }
 
+func TestResolveLifecycleAllowsRootIdentityWithoutStart(t *testing.T) {
+	target, err := ResolveLifecycle(Config{}, "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Name != "default" || target.Start != "" {
+		t.Fatalf("target=%#v", target)
+	}
+}
+
 func TestLoadForLifecycleRejectsInvalidCommandCharacters(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: |\n  printf one\n  printf two\n"), 0o644); err != nil {
@@ -312,5 +322,15 @@ func TestLoadForLifecycleRejectsStopField(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "stop is no longer supported") {
 			t.Fatalf("config %q err = %v", config, err)
 		}
+	}
+}
+
+func TestLoadForLifecycleRejectsReservedAllApp(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("apps:\n  all:\n    start: sleep 30\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := LoadForLifecycle(dir); err == nil || !strings.Contains(err.Error(), "apps.all is reserved") {
+		t.Fatalf("err=%v", err)
 	}
 }

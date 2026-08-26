@@ -27,8 +27,14 @@ type controlResponse struct {
 	State  State  `json:"state,omitempty"`
 }
 
+type controlAck struct {
+	Schema   int  `json:"schema"`
+	Received bool `json:"received"`
+}
+
 type stopRequest struct {
-	response chan State
+	response  chan State
+	delivered chan struct{}
 }
 
 func query(ctx context.Context, paths Paths, expected State) (Status, error) {
@@ -77,6 +83,11 @@ func sendControl(ctx context.Context, socket string, request controlRequest) (St
 		}
 		return State{}, fmt.Errorf("local supervisor: %s", response.Error)
 	}
+	if request.Action == "stop" {
+		if err := json.NewEncoder(conn).Encode(controlAck{Schema: StateSchema, Received: true}); err != nil {
+			return State{}, fmt.Errorf("acknowledge local supervisor stop: %w", err)
+		}
+	}
 	return response.State, nil
 }
 
@@ -108,8 +119,9 @@ func serveControl(listener net.Listener, current func() State, stops chan<- stop
 func handleControlConnection(conn net.Conn, current func() State, stops chan<- stopRequest) {
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
+	decoder := json.NewDecoder(io.LimitReader(conn, maxControlMessage))
 	var request controlRequest
-	if err := json.NewDecoder(io.LimitReader(conn, maxControlMessage)).Decode(&request); err != nil {
+	if err := decoder.Decode(&request); err != nil {
 		writeControlResponse(conn, controlResponse{Schema: StateSchema, Error: "invalid control request"})
 		return
 	}
@@ -123,9 +135,14 @@ func handleControlConnection(conn net.Conn, current func() State, stops chan<- s
 		writeControlResponse(conn, controlResponse{Schema: StateSchema, OK: true, State: state})
 	case "stop":
 		response := make(chan State, 1)
-		stops <- stopRequest{response: response}
+		delivered := make(chan struct{})
+		stops <- stopRequest{response: response, delivered: delivered}
 		final := <-response
-		writeControlResponse(conn, controlResponse{Schema: StateSchema, OK: true, State: final})
+		if err := json.NewEncoder(conn).Encode(controlResponse{Schema: StateSchema, OK: true, State: final}); err == nil {
+			var ack controlAck
+			_ = decoder.Decode(&ack)
+		}
+		close(delivered)
 	default:
 		writeControlResponse(conn, controlResponse{Schema: StateSchema, Error: "unknown control action"})
 	}

@@ -134,6 +134,9 @@ func validateLifecycleSyntax(cfg Config) error {
 		return err
 	}
 	for name, app := range cfg.Apps {
+		if strings.TrimSpace(name) == "all" {
+			return fmt.Errorf("%s apps.all is reserved for targeting all apps", ConfigFile)
+		}
 		if err := validateLifecycleValue(ConfigFile+" apps."+name+" start", app.Start); err != nil {
 			return err
 		}
@@ -217,7 +220,7 @@ func ResolveLifecycle(cfg Config, selector string, requireStart bool) (Lifecycle
 	name := selector
 	app := App{}
 	if selector == "" {
-		if hasDefaultLifecycleConfig(cfg) {
+		if hasDefaultLifecycleConfig(cfg) || len(cfg.Apps) == 0 {
 			name = "default"
 		} else {
 			var ok bool

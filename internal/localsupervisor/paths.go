@@ -35,5 +35,5 @@ func PathsFor(cacheRoot string, target Target) (Paths, error) {
 
 func shortHash(value string) string {
 	sum := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(sum[:16])
+	return hex.EncodeToString(sum[:8])
 }

@@ -1,5 +1,7 @@
 package localsupervisor
 
+import "time"
+
 const StateSchema = 1
 
 const (
@@ -38,4 +40,28 @@ type State struct {
 	ExitedAt           string `json:"exitedAt,omitempty"`
 	ExitCode           *int   `json:"exitCode,omitempty"`
 	Nonce              string `json:"nonce"`
+}
+
+type Startup struct {
+	Schema    int           `json:"schema"`
+	Target    Target        `json:"target"`
+	Paths     Paths         `json:"paths"`
+	Nonce     string        `json:"nonce"`
+	StartedAt time.Time     `json:"startedAt"`
+	StopGrace time.Duration `json:"stopGrace"`
+}
+
+type Status struct {
+	App       string
+	State     string
+	PID       int
+	StartedAt time.Time
+	ExitedAt  time.Time
+	ExitCode  *int
+}
+
+type readyMessage struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+	State State  `json:"state,omitempty"`
 }

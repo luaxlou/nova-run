@@ -160,6 +160,118 @@ func TestStartAllPreflightsBeforeMutation(t *testing.T) {
 	}
 }
 
+func TestStopEscalatesToKillAfterGrace(t *testing.T) {
+	m := testManager(t)
+	m.StopGrace = 100 * time.Millisecond
+	target := testTarget(t, "trap '' TERM; while :; do sleep 1; done")
+	if _, err := m.Start(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	if _, err := m.Stop(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	elapsed := time.Since(started)
+	if elapsed < 100*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("forced stop elapsed=%v", elapsed)
+	}
+	status, err := m.Status(context.Background(), target)
+	if err != nil || status.State != PhaseStopped {
+		t.Fatalf("status=%#v err=%v", status, err)
+	}
+}
+
+func TestStatusReturnsUnknownWhenLockOwnerHasNoSocket(t *testing.T) {
+	m := testManager(t)
+	m.ControlTimeout = 100 * time.Millisecond
+	target := testTarget(t, "sleep 30")
+	paths, err := PathsFor(m.CacheRoot, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, owned, err := TryLock(paths.Lock)
+	if err != nil || !owned {
+		t.Fatalf("owned=%v err=%v", owned, err)
+	}
+	defer lock.Close()
+	state := State{Schema: StateSchema, ProjectPath: target.ProjectPath, App: target.Name, Phase: PhaseRunning, Nonce: "held"}
+	if err := WriteState(paths.State, state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Status(context.Background(), target); err == nil || !strings.Contains(err.Error(), "state=unknown") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestSupervisorUsesProjectDirectoryEnvironmentAndLog(t *testing.T) {
+	m := testManager(t)
+	t.Setenv("NOVA_SUPERVISOR_TEST", "inherited")
+	target := testTarget(t, "printf '%s:%s' \"$NOVA_SUPERVISOR_TEST\" \"$(pwd)\"")
+	if _, err := m.Start(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	status := waitForPhase(t, m, target, PhaseStopped)
+	if status.ExitCode == nil || *status.ExitCode != 0 {
+		t.Fatalf("status=%#v", status)
+	}
+	paths, err := PathsFor(m.CacheRoot, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := os.ReadFile(paths.Output)
+	if err != nil || string(output) != "inherited:"+target.Dir {
+		t.Fatalf("output=%q err=%v", output, err)
+	}
+}
+
+func TestLaunchFailureReleasesLockAndCleansStartup(t *testing.T) {
+	m := testManager(t)
+	m.Executable = filepath.Join(t.TempDir(), "missing-nova")
+	m.launchSupervisor = m.launch
+	target := testTarget(t, "sleep 30")
+	if _, err := m.Start(context.Background(), target); err == nil {
+		t.Fatal("expected launch failure")
+	}
+	paths, err := PathsFor(m.CacheRoot, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, owned, err := TryLock(paths.Lock)
+	if err != nil || !owned {
+		t.Fatalf("lock was not released: owned=%v err=%v", owned, err)
+	}
+	defer lock.Close()
+	if _, err := os.Stat(paths.Startup); !os.IsNotExist(err) {
+		t.Fatalf("startup payload remains: %v", err)
+	}
+}
+
+func TestAlreadyStoppedCleansOnlyStaleControlFiles(t *testing.T) {
+	m := testManager(t)
+	target := testTarget(t, "")
+	paths, err := PathsFor(m.CacheRoot, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{paths.Socket, paths.Startup} {
+		if err := os.WriteFile(path, []byte("stale"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	result, err := m.Stop(context.Background(), target)
+	if err != nil || !result.Already {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	for _, path := range []string{paths.Socket, paths.Startup} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("stale path %s remains: %v", path, err)
+		}
+	}
+}
+
 func testManager(t *testing.T) *Manager {
 	t.Helper()
 	cacheRoot, err := os.MkdirTemp("/tmp", "nova-manager-test-")
@@ -181,6 +293,11 @@ func testManager(t *testing.T) *Manager {
 func testTarget(t *testing.T, command string) Target {
 	t.Helper()
 	dir := t.TempDir()
+	canonical, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir = canonical
 	return Target{ProjectPath: filepath.Join(dir, "nova.yaml"), Name: "api", Dir: dir, Start: command}
 }
 

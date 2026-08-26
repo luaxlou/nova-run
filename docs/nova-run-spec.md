@@ -7,7 +7,7 @@ Nova 是按需运行的项目生命周期工具。本地模式为每个运行中
 Nova 提供两条路径：
 
 1. 本地：`nova start|stop|restart|run|status [app|all]` 管理本机 supervisor，不连接 Agent。
-2. 远端：`nova start|stop|restart|run|status [app|all] --remote` 通过 Nova Agent 控制和查询 systemd；远端 run 同样等价于 restart。
+2. 远端：`nova start|stop|restart|run|status [app|all] -r|--remote` 通过 Nova Agent 控制和查询 systemd；远端 run 同样等价于 restart。
 
 `deploy|logs|list` 继续使用 Nova Agent。`nova logs` 仍是远端命令；本地应用输出写入 start 结果中显示的 `output.log`。
 
@@ -15,7 +15,9 @@ Nova 提供两条路径：
 
 Nova 不管理数据库、缓存、Ingress、反向代理、域名、TLS、负载均衡或服务发现。远端运行真相来自 systemd，远端日志真相来自 journald。
 
-`nova version` 与 `nova --version` 输出 Release 构建时注入的 CLI 版本；本地开发构建默认显示 `dev`。客户端安装器先使用该版本与目标 Release 比较，仅在版本不同、旧客户端不支持版本查询或指定 `--force` 时下载二进制。
+`nova version`、`nova -v` 与 `nova --version` 输出 Release 构建时注入的 CLI 版本；`nova -h` 与 `nova --help` 输出帮助。本地开发构建默认显示 `dev`。客户端安装器先使用该版本与目标 Release 比较，仅在版本不同、旧客户端不支持版本查询或指定 `-f|--force` 时下载二进制。
+
+生命周期命令的 `-r` 与 `--remote` 等价；日志命令的 `-f` 与 `--follow` 等价。短参数仅在对应命令上下文中解释。
 
 ## 项目配置
 
@@ -86,14 +88,14 @@ nova status [app|all]
 ## 远端命令语义
 
 ```text
-nova start [app|all] --remote
-nova stop [app|all] --remote
-nova restart [app|all] --remote
-nova run [app|all] --remote
-nova status [app|all] --remote
+nova start [app|all] [-r|--remote]
+nova stop [app|all] [-r|--remote]
+nova restart [app|all] [-r|--remote]
+nova run [app|all] [-r|--remote]
+nova status [app|all] [-r|--remote]
 ```
 
-`--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。远端 status 使用与本地相同的表格并增加 `VERSION` 列；Agent 未提供端口时 `PORT` 显示 `-`。没有 `--remote` 时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
+`-r|--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。远端 status 使用与本地相同的表格并增加 `VERSION` 列；Agent 未提供端口时 `PORT` 显示 `-`。没有远端参数时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
 
 ## 制品与远端运行
 

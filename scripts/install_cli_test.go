@@ -62,25 +62,29 @@ func TestInstallCLISkipsLatestVersionBeforeBinaryDownload(t *testing.T) {
 	}
 }
 
-func TestInstallCLIForceOverwritesIdenticalExecutable(t *testing.T) {
-	env := newInstallerEnv(t, "nova-v1")
-	oldTime := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
-	env.version = "v1"
-	env.writeVersionedNova(t, "1")
-	if err := os.Chtimes(env.installedPath, oldTime, oldTime); err != nil {
-		t.Fatal(err)
-	}
+func TestInstallCLIForceFlagsOverwriteIdenticalExecutable(t *testing.T) {
+	for _, forceFlag := range []string{"--force", "-f"} {
+		t.Run(forceFlag, func(t *testing.T) {
+			env := newInstallerEnv(t, "nova-v1")
+			oldTime := time.Date(2000, 1, 2, 3, 4, 5, 0, time.UTC)
+			env.version = "v1"
+			env.writeVersionedNova(t, "1")
+			if err := os.Chtimes(env.installedPath, oldTime, oldTime); err != nil {
+				t.Fatal(err)
+			}
 
-	output, err := env.run("--force")
-	if err != nil {
-		t.Fatalf("force install failed: %v\n%s", err, output)
-	}
-	info, err := os.Stat(env.installedPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.ModTime().Equal(oldTime) {
-		t.Fatal("--force did not overwrite the identical binary")
+			output, err := env.run(forceFlag)
+			if err != nil {
+				t.Fatalf("force install failed: %v\n%s", err, output)
+			}
+			info, err := os.Stat(env.installedPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if info.ModTime().Equal(oldTime) {
+				t.Fatalf("%s did not overwrite the identical binary", forceFlag)
+			}
+		})
 	}
 }
 

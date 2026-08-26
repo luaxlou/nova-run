@@ -8,10 +8,10 @@ FORCE=0
 
 for arg in "$@"; do
   case "$arg" in
-    --force) FORCE=1 ;;
+    -f | --force) FORCE=1 ;;
     *)
       echo "Unknown argument: $arg" >&2
-      echo "Usage: install-cli.sh [--force]" >&2
+      echo "Usage: install-cli.sh [-f|--force]" >&2
       exit 1
       ;;
   esac

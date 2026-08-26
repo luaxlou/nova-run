@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-08-26
+
+### Added
+- 常用参数增加短写：`-v` 对应 `--version`、`-r` 对应 `--remote`，安装器的 `-f` 对应 `--force`。
+- `nova logs` 增加 `--follow`，与现有 `-f` 等价；`-h` 与 `--help` 继续作为帮助参数。
+
 ## [0.2.4] - 2026-08-26
 
 ### Added

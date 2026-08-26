@@ -25,13 +25,13 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要强制重新安装时执行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- --force
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- -f
 ```
 
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.4 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.5 bash
 ```
 
 ## 初始化项目
@@ -155,18 +155,18 @@ Nova Run 项目地址：
    `nova deploy all`
    Nova 会拒绝未提交的本地工作区，把当前 Git HEAD 短 SHA 作为部署版本提交给 Agent；如果目标应用已经是同一版本，命令会直接返回 `already latest`，不再构建和上传制品。
 9. 发布后执行：
-   `nova status --remote`
+   `nova status -r`
    或：
-   `nova status <app-selector> --remote`
+   `nova status <app-selector> -r`
    或：
-   `nova status all --remote`
+   `nova status all -r`
 10. 需要看日志时执行：
    `nova logs`
    或：
    `nova logs <app-selector> -f`
 11. 需要控制进程时执行：
    本地：`nova start|stop|restart|run|status [app-selector|all]`
-   远端：`nova start|stop|restart|run|status [app-selector|all] --remote`
+   远端：`nova start|stop|restart|run|status [app-selector|all] -r|--remote`
 
 上述 deploy、生命周期、status 和 logs 命令在省略选择器时都默认操作全部应用。只有显式指定 `<app-selector>` 时才操作单个应用；跟随日志必须写成 `nova logs <app-selector> -f`。
 
@@ -242,8 +242,11 @@ nova status [app|all]
 nova status [app|all] --remote
 nova logs [app|all] [-f]
 nova list
-nova version
+nova version | -v | --version
+nova -h | --help
 ```
+
+常用参数短写：`-r = --remote`、`-f = --follow`（仅用于 `nova logs`）、`-v = --version`、`-h = --help`。
 
 ## 项目部署配置
 

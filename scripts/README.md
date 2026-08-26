@@ -11,8 +11,10 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 脚本会先通过 `nova version` 比较本地与目标版本。版本一致时不会下载 Release 二进制，并提示无需更新。需要强制重新安装时使用：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- --force
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash -s -- -f
 ```
+
+`-f` 与 `--force` 等价。
 
 ## install-agent.sh
 

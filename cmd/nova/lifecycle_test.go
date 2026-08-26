@@ -17,7 +17,7 @@ import (
 )
 
 func TestParseLifecycleArgsAcceptsRemoteAnywhere(t *testing.T) {
-	for _, args := range [][]string{{"--remote", "api"}, {"api", "--remote"}} {
+	for _, args := range [][]string{{"--remote", "api"}, {"api", "--remote"}, {"-r", "api"}, {"api", "-r"}} {
 		got, err := parseLifecycleArgs(args)
 		if err != nil {
 			t.Fatal(err)

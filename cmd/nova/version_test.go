@@ -13,7 +13,7 @@ func TestVersionCommandsReportInjectedBuildVersion(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build versioned nova: %v\n%s", err, output)
 	}
-	for _, arg := range []string{"version", "--version"} {
+	for _, arg := range []string{"version", "--version", "-v"} {
 		t.Run(arg, func(t *testing.T) {
 			command := exec.Command(binary, arg)
 			output, err := command.CombinedOutput()

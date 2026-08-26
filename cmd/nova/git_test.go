@@ -74,6 +74,21 @@ func TestLoadLogTargetsRequiresExplicitAppForFollow(t *testing.T) {
 	}
 }
 
+func TestLoadLogTargetsAcceptsLongFollowFlag(t *testing.T) {
+	dir := writeLifecycleConfig(t, `apps:
+  api:
+    artifacts: [dist/api]
+`)
+	t.Chdir(dir)
+	targets, follow, err := loadLogTargetsFromArgs([]string{"api", "--follow"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !follow || len(targets) != 1 || targets[0].Name != "api" {
+		t.Fatalf("targets=%+v follow=%t", targets, follow)
+	}
+}
+
 func TestGitDeploymentVersionRequiresCleanWorktree(t *testing.T) {
 	dir := initGitRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "dirty.txt"), []byte("dirty"), 0o644); err != nil {

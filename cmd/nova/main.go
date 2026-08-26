@@ -38,15 +38,16 @@ func usage() {
 Usage:
   nova                # 无参数时会检查本地配置，不存在则进入交互式初始化
   nova init           # 初始化本机 CLI 要连接的发布目标
-  nova version        # 输出当前 Nova CLI 版本
+  nova version | -v | --version   # 输出当前 Nova CLI 版本
+  nova -h | --help                # 输出帮助
   nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
-  nova run [app|all] [--remote]      # 默认在本地执行 stop + start；--remote 操作 Nova Agent
+  nova run [app|all] [-r|--remote]   # 默认在本地执行 stop + start；远程操作 Nova Agent
   nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认全部
-  nova start [app|all] [--remote]
-  nova stop [app|all] [--remote]
-  nova restart [app|all] [--remote]
-  nova status [app|all] [--remote]
-  nova logs [app|all] [-f]
+  nova start [app|all] [-r|--remote]
+  nova stop [app|all] [-r|--remote]
+  nova restart [app|all] [-r|--remote]
+  nova status [app|all] [-r|--remote]
+  nova logs [app|all] [-f|--follow]
   nova list
 
 Local convenience:
@@ -66,7 +67,7 @@ func main() {
 		}
 		return
 	}
-	if len(args) == 2 && (args[1] == "version" || args[1] == "--version") {
+	if len(args) == 2 && (args[1] == "version" || args[1] == "-v" || args[1] == "--version") {
 		fmt.Printf("nova %s\n", version)
 		return
 	}
@@ -250,7 +251,7 @@ func parseLifecycleArgs(args []string) (lifecycleArgs, error) {
 	var parsed lifecycleArgs
 	for _, arg := range args {
 		switch {
-		case arg == "--remote":
+		case arg == "-r" || arg == "--remote":
 			if parsed.Remote {
 				return lifecycleArgs{}, fmt.Errorf("--remote may only be specified once")
 			}
@@ -670,7 +671,7 @@ func loadLogTargetsFromArgs(args []string) ([]project.Target, bool, error) {
 	follow := false
 	selector := ""
 	for _, arg := range args {
-		if arg == "-f" {
+		if arg == "-f" || arg == "--follow" {
 			follow = true
 			continue
 		}

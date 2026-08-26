@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +31,7 @@ type Manager struct {
 	ControlTimeout   time.Duration
 	StopGrace        time.Duration
 	launchSupervisor launchFunc
+	discoverPorts    func(int) []int
 }
 
 type Result struct {
@@ -55,6 +55,7 @@ func NewManager() (*Manager, error) {
 		StartTimeout: defaultStartTimeout, ControlTimeout: defaultControlTimeout, StopGrace: defaultStopGrace,
 	}
 	m.launchSupervisor = m.launch
+	m.discoverPorts = discoverListeningPorts
 	return m, nil
 }
 
@@ -218,6 +219,13 @@ func (m *Manager) Status(ctx context.Context, target Target) (Status, error) {
 	live, err := query(controlCtx, paths, state)
 	if err != nil {
 		return Status{}, fmt.Errorf("state=unknown app=%s: %w", target.Name, err)
+	}
+	if live.PID > 0 {
+		discoverPorts := m.discoverPorts
+		if discoverPorts == nil {
+			discoverPorts = discoverListeningPorts
+		}
+		live.Ports = discoverPorts(live.PID)
 	}
 	return live, nil
 }
@@ -435,21 +443,4 @@ func (m *Manager) validate() error {
 func cleanupStaleRuntime(paths Paths) {
 	_ = os.Remove(paths.Socket)
 	_ = os.Remove(paths.Startup)
-}
-
-func (s Status) Line() string {
-	pid, started, exited, exit := "-", "-", "-", "-"
-	if s.PID > 0 {
-		pid = strconv.Itoa(s.PID)
-	}
-	if !s.StartedAt.IsZero() {
-		started = s.StartedAt.Format(time.RFC3339)
-	}
-	if !s.ExitedAt.IsZero() {
-		exited = s.ExitedAt.Format(time.RFC3339)
-	}
-	if s.ExitCode != nil {
-		exit = strconv.Itoa(*s.ExitCode)
-	}
-	return fmt.Sprintf("app=%s state=%s pid=%s started=%s exited=%s exit=%s", s.App, s.State, pid, started, exited, exit)
 }

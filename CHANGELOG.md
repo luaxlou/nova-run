@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-26
+
+### Changed
+- 本地与远端 `nova status [app|all]` 改为对齐表格，移除配置路径、完整时间戳、空退出码和 sub-state 等干扰信息。
+- 本地运行中应用显示实际监听的 TCP 端口；多个端口会排序、去重，无法发现端口时显示 `-`。
+- 状态增加 Kubernetes 风格的 `AGE` 列，按本次启动时间显示秒、分、小时或天；错误退出码合并为 `error(<code>)`。
+- 远端状态保留 `VERSION` 列；当前 Agent 不提供端口信息，因此远端 `PORT` 显示 `-`。
+
 ## [0.2.0] - 2026-08-26
 
 ### Added

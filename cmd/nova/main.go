@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/luaxlou/glow-ops/internal/localsupervisor"
 	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
+	"github.com/luaxlou/glow-ops/internal/statusview"
 )
 
 func usage() {
@@ -320,7 +322,6 @@ func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed
 	} else {
 		return fmt.Errorf("resolve project config symlinks: %w", evalErr)
 	}
-	fmt.Fprintf(stdout, "project config: %s\n", canonical)
 	targets := make([]localsupervisor.Target, 0, len(resolved))
 	for _, target := range resolved {
 		targets = append(targets, localsupervisor.Target{
@@ -328,15 +329,17 @@ func runConfiguredLocalLifecycle(ctx context.Context, dir, action string, parsed
 		})
 	}
 	if action == "status" {
+		rows := make([]statusview.Row, 0, len(targets))
 		for _, target := range targets {
 			status, statusErr := manager.Status(ctx, target)
 			if statusErr != nil {
 				return statusErr
 			}
-			fmt.Fprintln(stdout, status.Line())
+			rows = append(rows, localStatusRow(status))
 		}
-		return nil
+		return statusview.Render(stdout, rows, false, time.Now())
 	}
+	fmt.Fprintf(stdout, "project config: %s\n", canonical)
 	var results []localsupervisor.Result
 	switch action {
 	case "start":
@@ -361,10 +364,11 @@ type remoteLifecycleClient interface {
 	Start(context.Context, string) error
 	Stop(context.Context, string) error
 	Restart(context.Context, string) error
-	Status(context.Context, string) (string, error)
+	AppStatus(context.Context, string) (client.AppStatus, error)
 }
 
 func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient, action string, targets []project.Target, stdout io.Writer) error {
+	statusRows := make([]statusview.Row, 0, len(targets))
 	for _, target := range targets {
 		var err error
 		switch action {
@@ -375,10 +379,10 @@ func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient
 		case "restart", "run":
 			err = cli.Restart(ctx, target.App)
 		case "status":
-			var status string
-			status, err = cli.Status(ctx, target.App)
+			var status client.AppStatus
+			status, err = cli.AppStatus(ctx, target.App)
 			if err == nil {
-				fmt.Fprintln(stdout, status)
+				statusRows = append(statusRows, remoteStatusRow(target.App, status))
 			}
 		default:
 			return fmt.Errorf("unknown remote lifecycle action %q", action)
@@ -390,7 +394,62 @@ func runConfiguredRemoteLifecycle(ctx context.Context, cli remoteLifecycleClient
 			fmt.Fprintf(stdout, "%s %s command sent\n", target.App, action)
 		}
 	}
+	if action == "status" {
+		return statusview.Render(stdout, statusRows, true, time.Now())
+	}
 	return nil
+}
+
+func localStatusRow(status localsupervisor.Status) statusview.Row {
+	state := status.State
+	if state == localsupervisor.PhaseError && status.ExitCode != nil && *status.ExitCode != 0 {
+		state = fmt.Sprintf("error(%d)", *status.ExitCode)
+	}
+	pid := ""
+	if status.PID > 0 {
+		pid = strconv.Itoa(status.PID)
+	}
+	return statusview.Row{App: status.App, State: state, PID: pid, Ports: status.Ports, StartedAt: status.StartedAt}
+}
+
+func remoteStatusRow(app string, status client.AppStatus) statusview.Row {
+	state := strings.TrimSpace(status.State)
+	subState := strings.TrimSpace(status.SubState)
+	switch state {
+	case "active":
+		if subState == "running" {
+			state = "running"
+		}
+	case "activating":
+		state = "starting"
+	case "deactivating":
+		state = "stopping"
+	case "inactive":
+		state = "stopped"
+	case "failed":
+		if code, err := strconv.Atoi(strings.TrimSpace(status.ExitCode)); err == nil && code != 0 {
+			state = fmt.Sprintf("error(%d)", code)
+		} else {
+			state = "error"
+		}
+	}
+	if state == "" {
+		state = "unknown"
+	}
+	return statusview.Row{
+		App: app, State: state, PID: status.PID,
+		StartedAt: parseStatusStarted(status.Started), Version: status.Version,
+	}
+}
+
+func parseStatusStarted(value string) time.Time {
+	value = strings.TrimSpace(value)
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "Mon 2006-01-02 15:04:05 MST"} {
+		if parsed, err := time.ParseInLocation(layout, value, time.Local); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
 }
 
 func cliExitCode(err error) int {

@@ -55,6 +55,7 @@ type Status struct {
 	App       string
 	State     string
 	PID       int
+	Ports     []int
 	StartedAt time.Time
 	ExitedAt  time.Time
 	ExitCode  *int

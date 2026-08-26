@@ -5,10 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	gopsutilnet "github.com/shirou/gopsutil/v3/net"
 )
 
 func TestSupervisorProcess(t *testing.T) {
@@ -82,17 +85,40 @@ func TestManagerStatusReportsNotStarted(t *testing.T) {
 	}
 }
 
-func TestStatusLineIsStable(t *testing.T) {
-	exitCode := 7
-	status := Status{
-		App: "api", State: PhaseError, PID: 123,
-		StartedAt: time.Date(2026, 8, 26, 10, 0, 0, 0, time.FixedZone("CST", 8*60*60)),
-		ExitedAt:  time.Date(2026, 8, 26, 10, 1, 0, 0, time.FixedZone("CST", 8*60*60)),
-		ExitCode:  &exitCode,
+func TestNormalizePortsSortsAndDeduplicates(t *testing.T) {
+	got := normalizePorts([]int{8080, 3000, 8080, 0, -1})
+	want := []int{3000, 8080}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("normalizePorts()=%v want=%v", got, want)
 	}
-	want := "app=api state=error pid=123 started=2026-08-26T10:00:00+08:00 exited=2026-08-26T10:01:00+08:00 exit=7"
-	if got := status.Line(); got != want {
-		t.Fatalf("line=%q want=%q", got, want)
+}
+
+func TestListeningPortsFromConnectionsUsesOnlyTCPListeners(t *testing.T) {
+	connections := []gopsutilnet.ConnectionStat{
+		{Status: "LISTEN", Laddr: gopsutilnet.Addr{Port: 8080}},
+		{Status: "listen", Laddr: gopsutilnet.Addr{Port: 3000}},
+		{Status: "ESTABLISHED", Laddr: gopsutilnet.Addr{Port: 9000}},
+	}
+	want := []int{3000, 8080}
+	if got := listeningPortsFromConnections(connections); !reflect.DeepEqual(got, want) {
+		t.Fatalf("listeningPortsFromConnections()=%v want=%v", got, want)
+	}
+}
+
+func TestManagerStatusIncludesDiscoveredPorts(t *testing.T) {
+	m := testManager(t)
+	m.discoverPorts = func(int) []int { return []int{3000, 8080} }
+	target := testTarget(t, "sleep 30")
+	if _, err := m.Start(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = m.Stop(context.Background(), target) })
+	status, err := m.Status(context.Background(), target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []int{3000, 8080}; !reflect.DeepEqual(status.Ports, want) {
+		t.Fatalf("ports=%v want=%v", status.Ports, want)
 	}
 }
 

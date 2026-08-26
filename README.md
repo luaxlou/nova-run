@@ -25,7 +25,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.0 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.1 bash
 ```
 
 ## 初始化项目
@@ -192,6 +192,17 @@ nova status                # 查询本地 supervisor 或最终退出状态
 ```
 
 这些本地命令不依赖 `nova init`、Nova Agent Endpoint 或访问令牌。应用 stdout/stderr 会追加到 start 输出的 `output.log`。应用自然退出后，supervisor 保存最终状态和退出码并退出，不自动重启。
+
+`nova status all` 会把状态压缩成对齐表格。`PORT` 来自运行中应用进程及其子进程实际监听的 TCP 端口；`AGE` 从本次启动时间开始计算，即使应用已经停止也会继续增长：
+
+```text
+APP      STATE     PID    PORT       AGE
+api      running   12345  3000,8080  2m
+worker   stopped   -      -          3h
+jobs     error(7)  -      -          5d
+```
+
+远端 `nova status all --remote` 使用相同布局，额外显示 `VERSION`。当前 Agent 不返回端口，所以远端 `PORT` 为 `-`。
 
 多应用项目可以分别配置：
 

@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/luaxlou/glow-ops/internal/client"
 	"github.com/luaxlou/glow-ops/internal/localsupervisor"
 	"github.com/luaxlou/glow-ops/internal/project"
 )
@@ -68,8 +70,11 @@ func TestLocalStatusDoesNotRequireStartCommand(t *testing.T) {
 	if len(manager.calls) != 1 || manager.calls[0] != "status:api" {
 		t.Fatalf("calls=%v", manager.calls)
 	}
-	if !strings.Contains(stdout.String(), "app=api state=not_started") {
+	if !strings.Contains(stdout.String(), "APP") || !strings.Contains(stdout.String(), "api") || !strings.Contains(stdout.String(), "not_started") {
 		t.Fatalf("stdout=%q", stdout.String())
+	}
+	if strings.Contains(stdout.String(), "project config:") {
+		t.Fatalf("status contains config noise: %q", stdout.String())
 	}
 }
 
@@ -148,7 +153,7 @@ func fakeResults(targets []localsupervisor.Target) []localsupervisor.Result {
 
 type fakeRemoteLifecycleClient struct {
 	calls  []string
-	status string
+	status client.AppStatus
 	err    error
 }
 
@@ -167,7 +172,7 @@ func (f *fakeRemoteLifecycleClient) Restart(_ context.Context, app string) error
 	return f.err
 }
 
-func (f *fakeRemoteLifecycleClient) Status(_ context.Context, app string) (string, error) {
+func (f *fakeRemoteLifecycleClient) AppStatus(_ context.Context, app string) (client.AppStatus, error) {
 	f.calls = append(f.calls, "status:"+app)
 	return f.status, f.err
 }
@@ -184,12 +189,15 @@ func TestRemoteRunMapsToRestart(t *testing.T) {
 }
 
 func TestRemoteStatusUsesAgentClient(t *testing.T) {
-	cli := &fakeRemoteLifecycleClient{status: "remote-status"}
+	cli := &fakeRemoteLifecycleClient{status: client.AppStatus{
+		State: "active", SubState: "running", PID: "42",
+		Started: time.Now().Add(-8 * time.Minute).Format(time.RFC3339), Version: "abc123",
+	}}
 	var stdout bytes.Buffer
 	if err := runConfiguredRemoteLifecycle(context.Background(), cli, "status", []project.Target{{App: "api"}}, &stdout); err != nil {
 		t.Fatal(err)
 	}
-	if len(cli.calls) != 1 || cli.calls[0] != "status:api" || stdout.String() != "remote-status\n" {
+	if len(cli.calls) != 1 || cli.calls[0] != "status:api" || !strings.Contains(stdout.String(), "VERSION") || !strings.Contains(stdout.String(), "abc123") {
 		t.Fatalf("calls=%v stdout=%q", cli.calls, stdout.String())
 	}
 }

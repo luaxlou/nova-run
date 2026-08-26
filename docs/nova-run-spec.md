@@ -71,7 +71,7 @@ nova status [app|all]
 - `stop` 请求 supervisor 停止完整应用进程组；先发 TERM，三秒仍未退出则发 KILL。已停止时幂等成功。
 - `restart` 先停止全部选中应用，再启动全部选中应用。
 - `run` 与 restart 完全等价，没有独立语义。
-- `status` 通过锁和匹配的 Unix socket 查询活动 supervisor；锁空闲时读取最终 stopped/error 状态；从未启动显示 `not_started`；无法确认所有权时返回 `state=unknown` 错误。
+- `status` 通过锁和匹配的 Unix socket 查询活动 supervisor；锁空闲时读取最终 stopped/error 状态；从未启动显示 `not_started`；无法确认所有权时返回 `state=unknown` 错误。结果按 `APP STATE PID PORT AGE` 对齐输出；运行中应用的 `PORT` 来自应用进程及其子进程实际监听的 TCP 端口，`AGE` 从本次启动时间开始计算，非零退出码折叠为 `error(<code>)`。
 - `all` 按 YAML 声明顺序执行，并在任何 stop/start 前校验全部 start 目标。批量启动中途失败时，只回滚本次新启动的 supervisor。
 - 配置、启动或通信错误返回 1。
 
@@ -89,7 +89,7 @@ nova run [app|all] --remote
 nova status [app|all] --remote
 ```
 
-`--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。没有 `--remote` 时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
+`--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。远端 status 使用与本地相同的表格并增加 `VERSION` 列；Agent 未提供端口时 `PORT` 显示 `-`。没有 `--remote` 时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
 
 ## 制品与远端运行
 

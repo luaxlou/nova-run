@@ -14,7 +14,6 @@ const ConfigFile = "nova.yaml"
 type Config struct {
 	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
 	Start     string         `json:"start,omitempty" yaml:"start,omitempty"`
-	Stop      string         `json:"stop,omitempty" yaml:"stop,omitempty"`
 	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string       `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig  `json:"service,omitempty" yaml:"service,omitempty"`
@@ -25,7 +24,6 @@ type Config struct {
 type App struct {
 	App       string        `json:"app,omitempty" yaml:"app,omitempty"`
 	Start     string        `json:"start,omitempty" yaml:"start,omitempty"`
-	Stop      string        `json:"stop,omitempty" yaml:"stop,omitempty"`
 	Build     BuildConfig   `json:"build,omitempty" yaml:"build,omitempty"`
 	Artifacts []string      `json:"artifacts,omitempty" yaml:"artifacts,omitempty"`
 	Service   ServiceConfig `json:"service,omitempty" yaml:"service,omitempty"`
@@ -57,7 +55,7 @@ func LoadForLifecycle(dir string) (Config, string, error) {
 	if err != nil {
 		return Config{}, "", err
 	}
-	if err := rejectLegacyRun(path); err != nil {
+	if err := rejectDeprecatedLifecycleFields(path); err != nil {
 		return Config{}, "", err
 	}
 	if err := validateLifecycleSyntax(cfg); err != nil {
@@ -66,7 +64,7 @@ func LoadForLifecycle(dir string) (Config, string, error) {
 	return cfg, path, nil
 }
 
-func rejectLegacyRun(path string) error {
+func rejectDeprecatedLifecycleFields(path string) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", ConfigFile, err)
@@ -81,8 +79,8 @@ func rejectLegacyRun(path string) error {
 	doc := root.Content[0]
 	for i := 0; i+1 < len(doc.Content); i += 2 {
 		key, value := doc.Content[i], doc.Content[i+1]
-		if key.Value == "run" {
-			return fmt.Errorf("%s run is no longer supported; configure start and stop", ConfigFile)
+		if err := deprecatedLifecycleFieldError(ConfigFile, key.Value); err != nil {
+			return err
 		}
 		if key.Value != "apps" || value.Kind != yaml.MappingNode {
 			continue
@@ -93,13 +91,24 @@ func rejectLegacyRun(path string) error {
 				continue
 			}
 			for k := 0; k+1 < len(app.Content); k += 2 {
-				if app.Content[k].Value == "run" {
-					return fmt.Errorf("%s apps.%s run is no longer supported; configure start and stop", ConfigFile, name)
+				if err := deprecatedLifecycleFieldError(ConfigFile+" apps."+name, app.Content[k].Value); err != nil {
+					return err
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func deprecatedLifecycleFieldError(label, key string) error {
+	switch key {
+	case "run":
+		return fmt.Errorf("%s run is no longer supported; configure start", label)
+	case "stop":
+		return fmt.Errorf("%s stop is no longer supported; Nova supervises the start process", label)
+	default:
+		return nil
+	}
 }
 
 func loadConfig(dir string) (Config, string, error) {
@@ -124,14 +133,8 @@ func validateLifecycleSyntax(cfg Config) error {
 	if err := validateLifecycleValue(ConfigFile+" start", cfg.Start); err != nil {
 		return err
 	}
-	if err := validateLifecycleValue(ConfigFile+" stop", cfg.Stop); err != nil {
-		return err
-	}
 	for name, app := range cfg.Apps {
 		if err := validateLifecycleValue(ConfigFile+" apps."+name+" start", app.Start); err != nil {
-			return err
-		}
-		if err := validateLifecycleValue(ConfigFile+" apps."+name+" stop", app.Stop); err != nil {
 			return err
 		}
 	}
@@ -204,20 +207,12 @@ type Target struct {
 	Service   ServiceConfig
 }
 
-type LifecycleAction string
-
-const (
-	ActionStart LifecycleAction = "start"
-	ActionStop  LifecycleAction = "stop"
-)
-
 type LifecycleTarget struct {
 	Name  string
 	Start string
-	Stop  string
 }
 
-func ResolveLifecycle(cfg Config, selector string, actions ...LifecycleAction) (LifecycleTarget, error) {
+func ResolveLifecycle(cfg Config, selector string, requireStart bool) (LifecycleTarget, error) {
 	selector = strings.TrimSpace(selector)
 	name := selector
 	app := App{}
@@ -242,35 +237,20 @@ func ResolveLifecycle(cfg Config, selector string, actions ...LifecycleAction) (
 	target := LifecycleTarget{
 		Name:  name,
 		Start: strings.TrimSpace(firstNonEmpty(app.Start, cfg.Start)),
-		Stop:  strings.TrimSpace(firstNonEmpty(app.Stop, cfg.Stop)),
 	}
 	label := ConfigFile
 	if name != "default" {
 		label += " apps." + name
 	}
-	if len(actions) == 0 {
-		return LifecycleTarget{}, fmt.Errorf("local lifecycle action is required")
-	}
-	for _, action := range actions {
-		switch action {
-		case ActionStart:
-			if target.Start == "" {
-				return LifecycleTarget{}, fmt.Errorf("%s start is required", label)
-			}
-		case ActionStop:
-			if target.Stop == "" {
-				return LifecycleTarget{}, fmt.Errorf("%s stop is required", label)
-			}
-		default:
-			return LifecycleTarget{}, fmt.Errorf("unknown local lifecycle action %q", action)
-		}
+	if requireStart && target.Start == "" {
+		return LifecycleTarget{}, fmt.Errorf("%s start is required", label)
 	}
 	return target, nil
 }
 
-func ResolveAllLifecycles(cfg Config, actions ...LifecycleAction) ([]LifecycleTarget, error) {
+func ResolveAllLifecycles(cfg Config, requireStart bool) ([]LifecycleTarget, error) {
 	if len(cfg.Apps) == 0 {
-		target, err := ResolveLifecycle(cfg, "", actions...)
+		target, err := ResolveLifecycle(cfg, "", requireStart)
 		if err != nil {
 			return nil, err
 		}
@@ -278,7 +258,7 @@ func ResolveAllLifecycles(cfg Config, actions ...LifecycleAction) ([]LifecycleTa
 	}
 	targets := make([]LifecycleTarget, 0, len(cfg.Apps))
 	for _, name := range orderedAppNames(cfg) {
-		target, err := ResolveLifecycle(cfg, name, actions...)
+		target, err := ResolveLifecycle(cfg, name, requireStart)
 		if err != nil {
 			return nil, err
 		}
@@ -288,7 +268,7 @@ func ResolveAllLifecycles(cfg Config, actions ...LifecycleAction) ([]LifecycleTa
 }
 
 func hasDefaultLifecycleConfig(cfg Config) bool {
-	return strings.TrimSpace(cfg.Start) != "" || strings.TrimSpace(cfg.Stop) != ""
+	return strings.TrimSpace(cfg.Start) != ""
 }
 
 func Resolve(cfg Config, selector string) (Target, error) {

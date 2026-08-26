@@ -163,7 +163,7 @@ func TestValidateRejectsReservedAllApp(t *testing.T) {
 
 func TestLoadForLifecycleAllowsLifecycleOnlyConfigWithoutDeployFields(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: printf start\nstop: printf stop\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: printf start\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -174,8 +174,8 @@ func TestLoadForLifecycleAllowsLifecycleOnlyConfigWithoutDeployFields(t *testing
 	if path != filepath.Join(dir, ConfigFile) {
 		t.Fatalf("path = %q", path)
 	}
-	if cfg.Start != "printf start" || cfg.Stop != "printf stop" {
-		t.Fatalf("lifecycle = start %q stop %q", cfg.Start, cfg.Stop)
+	if cfg.Start != "printf start" {
+		t.Fatalf("lifecycle start = %q", cfg.Start)
 	}
 	if _, _, err := Load(dir); err == nil {
 		t.Fatal("lifecycle-only config must not pass deployment validation")
@@ -185,9 +185,8 @@ func TestLoadForLifecycleAllowsLifecycleOnlyConfigWithoutDeployFields(t *testing
 func TestResolveLifecycleUsesTopLevelAndAppCommands(t *testing.T) {
 	cfg := Config{
 		Start: "printf root-start",
-		Stop:  "printf root-stop",
 		Apps: map[string]App{
-			"api":    {Start: "printf api-start", Stop: "printf api-stop"},
+			"api":    {Start: "printf api-start"},
 			"worker": {},
 		},
 		AppOrder: []string{"api", "worker"},
@@ -197,13 +196,13 @@ func TestResolveLifecycleUsesTopLevelAndAppCommands(t *testing.T) {
 		selector string
 		want     LifecycleTarget
 	}{
-		{selector: "", want: LifecycleTarget{Name: "default", Start: "printf root-start", Stop: "printf root-stop"}},
-		{selector: "api", want: LifecycleTarget{Name: "api", Start: "printf api-start", Stop: "printf api-stop"}},
-		{selector: "worker", want: LifecycleTarget{Name: "worker", Start: "printf root-start", Stop: "printf root-stop"}},
+		{selector: "", want: LifecycleTarget{Name: "default", Start: "printf root-start"}},
+		{selector: "api", want: LifecycleTarget{Name: "api", Start: "printf api-start"}},
+		{selector: "worker", want: LifecycleTarget{Name: "worker", Start: "printf root-start"}},
 	}
 	for _, test := range tests {
 		t.Run(test.selector, func(t *testing.T) {
-			got, err := ResolveLifecycle(cfg, test.selector, ActionStop, ActionStart)
+			got, err := ResolveLifecycle(cfg, test.selector, true)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -217,17 +216,17 @@ func TestResolveLifecycleUsesTopLevelAndAppCommands(t *testing.T) {
 func TestResolveLifecycleDefaultsToFirstDeclaredApp(t *testing.T) {
 	cfg := Config{
 		Apps: map[string]App{
-			"api":    {Start: "start-api", Stop: "stop-api"},
-			"worker": {Start: "start-worker", Stop: "stop-worker"},
+			"api":    {Start: "start-api"},
+			"worker": {Start: "start-worker"},
 		},
 		AppOrder: []string{"worker", "api"},
 	}
 
-	target, err := ResolveLifecycle(cfg, "", ActionStop, ActionStart)
+	target, err := ResolveLifecycle(cfg, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (LifecycleTarget{Name: "worker", Start: "start-worker", Stop: "stop-worker"}); target != want {
+	if want := (LifecycleTarget{Name: "worker", Start: "start-worker"}); target != want {
 		t.Fatalf("target = %#v, want %#v", target, want)
 	}
 }
@@ -235,13 +234,13 @@ func TestResolveLifecycleDefaultsToFirstDeclaredApp(t *testing.T) {
 func TestResolveAllLifecyclesPreflightsMissingCommandWithoutPartialTargets(t *testing.T) {
 	cfg := Config{
 		Apps: map[string]App{
-			"api":    {Start: "start-api", Stop: "stop-api"},
-			"worker": {Stop: "stop-worker"},
+			"api":    {Start: "start-api"},
+			"worker": {},
 		},
 		AppOrder: []string{"api", "worker"},
 	}
 
-	targets, err := ResolveAllLifecycles(cfg, ActionStop, ActionStart)
+	targets, err := ResolveAllLifecycles(cfg, true)
 	if err == nil || !strings.Contains(err.Error(), "nova.yaml apps.worker start is required") {
 		t.Fatalf("err = %v", err)
 	}
@@ -251,29 +250,33 @@ func TestResolveAllLifecyclesPreflightsMissingCommandWithoutPartialTargets(t *te
 }
 
 func TestResolveAllLifecyclesUsesTopLevelOnceWithoutApps(t *testing.T) {
-	targets, err := ResolveAllLifecycles(Config{Start: "start", Stop: "stop"}, ActionStop, ActionStart)
+	targets, err := ResolveAllLifecycles(Config{Start: "start"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []LifecycleTarget{{Name: "default", Start: "start", Stop: "stop"}}
+	want := []LifecycleTarget{{Name: "default", Start: "start"}}
 	if !slices.Equal(targets, want) {
 		t.Fatalf("targets = %#v, want %#v", targets, want)
 	}
 }
 
-func TestResolveLifecycleValidatesOnlyRequestedAction(t *testing.T) {
-	cfg := Config{Start: "printf start"}
-	if _, err := ResolveLifecycle(cfg, "", ActionStart); err != nil {
+func TestResolveLifecycleAllowsIdentityOnlyLookup(t *testing.T) {
+	cfg := Config{Apps: map[string]App{"api": {}}, AppOrder: []string{"api"}}
+	target, err := ResolveLifecycle(cfg, "api", false)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ResolveLifecycle(cfg, "", ActionStop); err == nil || !strings.Contains(err.Error(), "stop is required") {
+	if target.Name != "api" || target.Start != "" {
+		t.Fatalf("target = %#v", target)
+	}
+	if _, err := ResolveLifecycle(cfg, "api", true); err == nil || !strings.Contains(err.Error(), "start is required") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestLoadForLifecycleRejectsInvalidCommandCharacters(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: |\n  printf one\n  printf two\nstop: printf stop\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte("start: |\n  printf one\n  printf two\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -291,6 +294,22 @@ func TestLoadForLifecycleRejectsFormerRunField(t *testing.T) {
 		}
 		_, _, err := LoadForLifecycle(dir)
 		if err == nil || !strings.Contains(err.Error(), "run is no longer supported") {
+			t.Fatalf("config %q err = %v", config, err)
+		}
+	}
+}
+
+func TestLoadForLifecycleRejectsStopField(t *testing.T) {
+	for _, config := range []string{
+		"start: sleep 30\nstop: kill-app\n",
+		"apps:\n  api:\n    start: sleep 30\n    stop:\n",
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, ConfigFile), []byte(config), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := LoadForLifecycle(dir)
+		if err == nil || !strings.Contains(err.Error(), "stop is no longer supported") {
 			t.Fatalf("config %q err = %v", config, err)
 		}
 	}

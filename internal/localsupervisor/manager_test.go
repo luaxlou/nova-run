@@ -2,8 +2,10 @@ package localsupervisor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +96,70 @@ func TestStatusLineIsStable(t *testing.T) {
 	}
 }
 
+func TestRestartAllStopsEveryAppBeforeStartingAnyApp(t *testing.T) {
+	m := testManager(t)
+	events := filepath.Join(t.TempDir(), "events")
+	targets := []Target{
+		testTargetWithName(t, "api", eventLoopCommand(events, "api")),
+		testTargetWithName(t, "web", eventLoopCommand(events, "web")),
+	}
+	if _, err := m.StartAll(context.Background(), targets); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = m.StopAll(context.Background(), targets) })
+	waitForEvents(t, events, 2)
+	if err := os.WriteFile(events, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.RestartAll(context.Background(), targets); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"stop-api", "stop-web", "start-api", "start-web"}
+	if got := waitForEvents(t, events, len(want)); !slices.Equal(got, want) {
+		t.Fatalf("events=%v want=%v", got, want)
+	}
+}
+
+func TestStartAllRollsBackOnlyNewStarts(t *testing.T) {
+	m := testManager(t)
+	already := testTargetWithName(t, "already", "sleep 30")
+	newApp := testTargetWithName(t, "new", "sleep 30")
+	broken := testTargetWithName(t, "broken", "sleep 30")
+	if _, err := m.Start(context.Background(), already); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = m.Stop(context.Background(), already) })
+	realLaunch := m.launchSupervisor
+	m.launchSupervisor = func(ctx context.Context, startup Startup, lock *Lock) (State, error) {
+		if startup.Target.Name == "broken" {
+			return State{}, errors.New("injected readiness failure")
+		}
+		return realLaunch(ctx, startup, lock)
+	}
+	if _, err := m.StartAll(context.Background(), []Target{already, newApp, broken}); err == nil {
+		t.Fatal("expected batch start failure")
+	}
+	if status, err := m.Status(context.Background(), already); err != nil || status.State != PhaseRunning {
+		t.Fatalf("already=%#v err=%v", status, err)
+	}
+	if status, err := m.Status(context.Background(), newApp); err != nil || status.State == PhaseRunning {
+		t.Fatalf("new=%#v err=%v", status, err)
+	}
+}
+
+func TestStartAllPreflightsBeforeMutation(t *testing.T) {
+	m := testManager(t)
+	valid := testTargetWithName(t, "valid", "sleep 30")
+	invalid := testTargetWithName(t, "invalid", "")
+	if _, err := m.StartAll(context.Background(), []Target{valid, invalid}); err == nil {
+		t.Fatal("expected preflight failure")
+	}
+	status, err := m.Status(context.Background(), valid)
+	if err != nil || status.State != "not_started" {
+		t.Fatalf("valid target mutated before preflight: status=%#v err=%v", status, err)
+	}
+}
+
 func testManager(t *testing.T) *Manager {
 	t.Helper()
 	cacheRoot, err := os.MkdirTemp("/tmp", "nova-manager-test-")
@@ -116,6 +182,35 @@ func testTarget(t *testing.T, command string) Target {
 	t.Helper()
 	dir := t.TempDir()
 	return Target{ProjectPath: filepath.Join(dir, "nova.yaml"), Name: "api", Dir: dir, Start: command}
+}
+
+func testTargetWithName(t *testing.T, name, command string) Target {
+	t.Helper()
+	target := testTarget(t, command)
+	target.Name = name
+	return target
+}
+
+func eventLoopCommand(path, name string) string {
+	return "trap 'printf stop-" + name + ", >> " + path + "; exit 0' TERM; " +
+		"printf start-" + name + ", >> " + path + "; while :; do sleep 1; done"
+}
+
+func waitForEvents(t *testing.T, path string, count int) []string {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		payload, err := os.ReadFile(path)
+		if err == nil {
+			parts := strings.Split(strings.TrimSuffix(string(payload), ","), ",")
+			if len(parts) >= count {
+				return parts
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("did not observe %d events in %s", count, path)
+	return nil
 }
 
 func waitForPhase(t *testing.T, manager *Manager, target Target, phase string) Status {

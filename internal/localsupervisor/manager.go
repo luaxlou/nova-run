@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -221,6 +222,56 @@ func (m *Manager) Status(ctx context.Context, target Target) (Status, error) {
 	return live, nil
 }
 
+func (m *Manager) StartAll(ctx context.Context, targets []Target) ([]Result, error) {
+	if err := validateTargets(targets, true); err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(targets))
+	newTargets := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		result, err := m.Start(ctx, target)
+		if err != nil {
+			rollbackErrs := []error{fmt.Errorf("start all at %s: %w", target.Name, err)}
+			for index := len(newTargets) - 1; index >= 0; index-- {
+				if _, stopErr := m.Stop(context.Background(), newTargets[index]); stopErr != nil {
+					rollbackErrs = append(rollbackErrs, fmt.Errorf("rollback %s: %w", newTargets[index].Name, stopErr))
+				}
+			}
+			return nil, errors.Join(rollbackErrs...)
+		}
+		results = append(results, result)
+		if !result.Already {
+			newTargets = append(newTargets, target)
+		}
+	}
+	return results, nil
+}
+
+func (m *Manager) StopAll(ctx context.Context, targets []Target) ([]Result, error) {
+	if err := validateTargets(targets, false); err != nil {
+		return nil, err
+	}
+	results := make([]Result, 0, len(targets))
+	for _, target := range targets {
+		result, err := m.Stop(ctx, target)
+		if err != nil {
+			return nil, fmt.Errorf("stop all at %s: %w", target.Name, err)
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+func (m *Manager) RestartAll(ctx context.Context, targets []Target) ([]Result, error) {
+	if err := validateTargets(targets, true); err != nil {
+		return nil, err
+	}
+	if _, err := m.StopAll(ctx, targets); err != nil {
+		return nil, err
+	}
+	return m.StartAll(ctx, targets)
+}
+
 func (m *Manager) launch(ctx context.Context, startup Startup, lock *Lock) (State, error) {
 	return m.launchCommand(ctx, startup, lock, []string{"__nova_supervisor", startup.Paths.Startup}, nil)
 }
@@ -340,6 +391,24 @@ func validateTarget(target Target, requireStart bool) error {
 	}
 	if requireStart && strings.TrimSpace(target.Start) == "" {
 		return fmt.Errorf("local supervisor start command is required for %s", target.Name)
+	}
+	return nil
+}
+
+func validateTargets(targets []Target, requireStart bool) error {
+	if len(targets) == 0 {
+		return fmt.Errorf("at least one local supervisor target is required")
+	}
+	seen := make(map[string]bool, len(targets))
+	for _, target := range targets {
+		if err := validateTarget(target, requireStart); err != nil {
+			return err
+		}
+		identity := filepath.Clean(target.ProjectPath) + "\x00" + target.Name
+		if seen[identity] {
+			return fmt.Errorf("duplicate local supervisor target %s", target.Name)
+		}
+		seen[identity] = true
 	}
 	return nil
 }

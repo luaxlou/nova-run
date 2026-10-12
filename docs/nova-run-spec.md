@@ -24,6 +24,7 @@ Nova 不管理数据库、缓存、Ingress、反向代理、域名、TLS、负�
 单应用：
 
 ```yaml
+project: example
 app: example
 start: exec ./bin/example
 build:
@@ -38,6 +39,7 @@ service:
 多应用：
 
 ```yaml
+project: example
 apps:
   api:
     start: exec ./bin/api
@@ -97,6 +99,8 @@ nova status [app|all] [-r|--remote]
 
 `-r|--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。远端 status 使用与本地相同的表格并增加 `VERSION` 列；Agent 未提供端口时 `PORT` 显示 `-`。没有远端参数时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
 
+远端操作要求顶层 `project` 项目名称。每个项目在 Agent 上只有一个当前凭证；服务器执行 `sudo nova auth set <project>` 会创建或覆盖该项目授权，旧 token 立即失效。客户端 `nova init` 将 Endpoint 和 token 保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不同项目不会互相回退或复用凭证。
+
 ## 制品与远端运行
 
 `service.command` 仍是远端生产进程入口。发布时 Nova 生成 artifact 根目录的 `run` 脚本和 `nova.app.yaml`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
@@ -118,13 +122,13 @@ runtime:
 ## API/CLI 对应关系
 
 - 本地 supervisor（无 API） -> `nova start|stop|restart|run|status [app|all]`
-- `PUT /v1/apps/{name}` -> `nova deploy [app|all]`
-- `POST /v1/apps/{name}/start` -> `nova start [app|all] --remote`
-- `POST /v1/apps/{name}/stop` -> `nova stop [app|all] --remote`
-- `POST /v1/apps/{name}/restart` -> `nova restart|run [app|all] --remote`
-- `GET /v1/apps/{name}/status` -> `nova status [app|all] --remote`
-- `GET /v1/apps/{name}/logs` -> `nova logs [app|all]`
-- `GET /v1/apps` 作为 Agent 兼容 API 保留，不再对应 CLI 命令。
+- `PUT /v2/projects/{project}/apps/{name}` -> `nova deploy [app|all]`
+- `POST /v2/projects/{project}/apps/{name}/start` -> `nova start [app|all] --remote`
+- `POST /v2/projects/{project}/apps/{name}/stop` -> `nova stop [app|all] --remote`
+- `POST /v2/projects/{project}/apps/{name}/restart` -> `nova restart|run [app|all] --remote`
+- `GET /v2/projects/{project}/apps/{name}/status` -> `nova status [app|all] --remote`
+- `GET /v2/projects/{project}/apps/{name}/logs` -> `nova logs [app|all]`
+- `GET /v2/projects/{project}/apps` 只返回当前项目的远端应用。
 
 CLI 的 `[app]` 是当前项目 `nova.yaml` 中 `apps` 下的选择器，不是临时远端应用名。本地状态身份也始终使用选择器，不使用可选的远端 `app` 别名。
 

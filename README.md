@@ -4,9 +4,19 @@ Nova 是一个单二进制应用管理工具，用于把项目发布到一台服
 
 ## 安装 Nova 客户端
 
+macOS / Linux：
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash
 ```
+
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.ps1 | iex
+```
+
+Windows 客户端支持部署、日志、配置与带 `--remote` 的远端生命周期命令。本地 `start`、`stop`、`restart`、`run` 和 `status` 的 supervisor 目前仅支持 macOS / Linux；Nova Agent 仍只安装在 Linux 服务器上。
 
 这一步只做安装：下载当前系统对应的 `nova` 二进制，并安装为本机命令。
 
@@ -31,12 +41,12 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.6 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.7 bash
 ```
 
 ## 初始化项目
 
-请先在目标 Linux 服务器上安装 Nova Agent。安装完成后，脚本会输出 `nova init` 需要填写的 Nova Agent Endpoint 和访问令牌。
+请先在目标 Linux 服务器上安装 Nova Agent，然后执行 `sudo nova auth set <project>` 为当前项目创建授权。项目名称来自 `nova.yaml` 顶层的 `project` 字段；重复执行会覆盖原授权并使旧 token 失效。
 
 进入项目目录后执行：
 
@@ -50,7 +60,7 @@ nova
 nova init
 ```
 
-这一步只初始化当前项目。首次执行时，Nova 会进入交互式初始化，要求填写 Nova Agent Endpoint 和访问令牌。
+这一步只初始化当前项目。首次执行时，Nova 会进入交互式初始化，要求填写 Nova Agent Endpoint 和项目 token。凭证保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不会写入仓库。
 
 Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例如 `http://你的服务器IP:32102`。
 
@@ -84,15 +94,14 @@ Nova Run 项目地址：
    如果不能 SSH 到 root，请使用我提供的用户或让我提供登录方式。
 4. 确认服务器 Agent 运行：
    `ssh root@<server> 'systemctl is-active nova.service && systemctl is-enabled nova.service && ss -ltnp | grep 32102'`
-5. 确认本机可以访问 Agent 端口：
-   `curl -i --max-time 10 http://<server>:32102/v1/apps`
-   未带 token 时返回 `401 invalid token` 也代表端口已经打通。
+5. 确认本机可以访问 Agent：
+   `curl -fsS --max-time 10 http://<server>:32102/health`
 6. 如果公网访问超时，请协助开放安全组或防火墙入方向 `TCP 32102`。开放前说明来源范围；默认优先只开放我的公网 IP，必要时再临时开放 `0.0.0.0/0`。
-7. 获取访问令牌：
-   `ssh root@<server> 'sudo cat /etc/nova/token'`
+7. 按 `nova.yaml` 中的项目名称创建或覆盖项目授权：
+   `ssh root@<server> 'sudo nova auth set <project>'`
 8. 在本机项目目录执行：
    `nova init`
-   Endpoint 填 `http://<server>:32102`，Token 填上一步读取到的值。
+   Endpoint 填 `http://<server>:32102`，Token 填上一步生成的值。
 9. 用下面命令验证：
    `nova target list`
 
@@ -121,6 +130,7 @@ Nova Run 项目地址：
 3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
 4. 单应用项目优先使用这个结构：
    ```yaml
+   project: <project-name>
    app: <app-name>
    start: <long-running-foreground-command>
    build:
@@ -133,6 +143,7 @@ Nova Run 项目地址：
    ```
 5. 多子应用项目使用这个结构：
    ```yaml
+   project: <project-name>
    apps:
      <app-name>:
        start: <long-running-foreground-command>
@@ -213,6 +224,7 @@ jobs     error(7)  -      -          5d
 多应用项目可以分别配置：
 
 ```yaml
+project: example
 apps:
   api:
     start: exec ./bin/api
@@ -252,6 +264,7 @@ nova -h | --help
 项目根目录使用 `nova.yaml` 声明部署方式。Nova 命令默认服务当前目录，不接收临时应用名或制品路径参数，而是读取这份配置。
 
 ```yaml
+project: sbom-platform
 app: sbom-platform
 start: exec ./bin/sbom-platform
 build:
@@ -267,6 +280,7 @@ service:
 多子应用项目可以在 `apps` 下声明可选目标：
 
 ```yaml
+project: sbom-platform
 apps:
   sbom-platform-backend:
     start: exec ./bin/backend
@@ -346,9 +360,11 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 安装完成后会看到类似输出：
 
 ```text
-Nova Agent initialized. Use these values when running 'nova init' on your project machine:
+Nova Agent initialized. Create or replace one project's authorization with:
+  sudo nova auth set <project>
+Then use these values when running 'nova init' in that project:
 Nova Agent Endpoint: http://<this-server-ip-or-domain>:32102
-Access token: sudo cat /etc/nova/token
+Project token: output of 'sudo nova auth set <project>'
 ```
 
 如果已经有明确的域名或公网地址，可以安装时传入 `NOVA_AGENT_ENDPOINT`，让脚本输出可直接复制的 Endpoint：

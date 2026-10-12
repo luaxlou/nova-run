@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-10-12
+
+### Added
+- 新增 Windows amd64/arm64 客户端 Release 产物及 PowerShell 安装脚本；支持配置、部署、日志和远端生命周期操作。
+- 新增项目级远端授权：`nova auth set <project>` 为单个项目创建或覆盖唯一凭证，旧凭证立即失效。
+- 新增 `/v2/projects/{project}/apps/...` API，使应用列表、部署、日志与远端生命周期操作绑定到项目作用域。
+
+### Changed
+- Windows 构建命令通过 `cmd.exe` 执行；依赖 Unix 进程组的本地 supervisor 在 Windows 上会明确提示仅支持远端操作。
+- `nova.yaml` 的远端操作要求声明 `project` 项目名称。
+- `nova init` 按项目名称把 Endpoint 和 token 保存到系统用户配置目录，不再复用全局客户端凭证。
+- Agent 安装改用 `/etc/nova/auth/projects` 项目授权目录，不再生成机器级客户端 token。
+
 ## [0.2.6] - 2026-08-26
 
 ### Removed

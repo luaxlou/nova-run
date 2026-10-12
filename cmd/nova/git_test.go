@@ -9,7 +9,8 @@ import (
 )
 
 func TestLoadTargetsDefaultsToAllConfiguredApps(t *testing.T) {
-	dir := writeLifecycleConfig(t, `apps:
+	dir := writeLifecycleConfig(t, `project: test-project
+apps:
   api:
     artifacts: [dist/api]
   worker:
@@ -30,7 +31,8 @@ func TestLoadTargetsDefaultsToAllConfiguredApps(t *testing.T) {
 }
 
 func TestLoadTargetsKeepsExplicitAppSelection(t *testing.T) {
-	dir := writeLifecycleConfig(t, `apps:
+	dir := writeLifecycleConfig(t, `project: test-project
+apps:
   api:
     artifacts: [dist/api]
   worker:
@@ -47,7 +49,8 @@ func TestLoadTargetsKeepsExplicitAppSelection(t *testing.T) {
 }
 
 func TestLoadLogTargetsDefaultsToAllConfiguredApps(t *testing.T) {
-	dir := writeLifecycleConfig(t, `apps:
+	dir := writeLifecycleConfig(t, `project: test-project
+apps:
   api:
     artifacts: [dist/api]
   worker:
@@ -64,7 +67,8 @@ func TestLoadLogTargetsDefaultsToAllConfiguredApps(t *testing.T) {
 }
 
 func TestLoadLogTargetsRequiresExplicitAppForFollow(t *testing.T) {
-	dir := writeLifecycleConfig(t, `apps:
+	dir := writeLifecycleConfig(t, `project: test-project
+apps:
   api:
     artifacts: [dist/api]
 `)
@@ -75,7 +79,8 @@ func TestLoadLogTargetsRequiresExplicitAppForFollow(t *testing.T) {
 }
 
 func TestLoadLogTargetsAcceptsLongFollowFlag(t *testing.T) {
-	dir := writeLifecycleConfig(t, `apps:
+	dir := writeLifecycleConfig(t, `project: test-project
+apps:
   api:
     artifacts: [dist/api]
 `)

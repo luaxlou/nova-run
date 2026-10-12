@@ -1,5 +1,15 @@
 # Scripts
 
+## install-cli.ps1
+
+在 Windows PowerShell 中安装 Nova 客户端，并校验 Release 的 SHA256：
+
+```powershell
+irm https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.ps1 | iex
+```
+
+默认安装到当前用户的 `%LOCALAPPDATA%\Programs\Nova`，并加入用户 `PATH`。可以通过 `NOVA_VERSION`、`NOVA_INSTALL_DIR` 或脚本参数 `-Version`、`-InstallDir`、`-Force` 调整。
+
 ## install-cli.sh
 
 安装本机 Nova 客户端。它只下载并安装 `nova` 二进制，不做项目初始化。
@@ -18,7 +28,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 ## install-agent.sh
 
-在 Linux 服务器上安装 Nova Agent。安装完成后，脚本会输出 `nova init` 需要填写的 Nova Agent Endpoint 和访问令牌位置。
+在 Linux 服务器上安装 Nova Agent。安装完成后，先执行 `sudo nova auth set <project>` 创建或覆盖单个项目授权，再把输出的项目 token 交给该项目中的 `nova init`。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo bash

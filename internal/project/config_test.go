@@ -46,6 +46,24 @@ func TestValidateRequiresAppAndArtifacts(t *testing.T) {
 	}
 }
 
+func TestValidateRemoteProjectUsesProjectName(t *testing.T) {
+	base := Config{Project: "billing", App: "api", Artifacts: []string{"dist"}}
+	if err := ValidateRemoteProject(base); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"", "Billing", "billing--api", "../billing"} {
+		cfg := base
+		cfg.Project = value
+		if err := ValidateRemoteProject(cfg); err == nil {
+			t.Fatalf("project %q unexpectedly accepted", value)
+		}
+	}
+	base.App = "other--api"
+	if err := ValidateRemoteProject(base); err == nil {
+		t.Fatal("reserved remote app delimiter unexpectedly accepted")
+	}
+}
+
 func TestValidateAllowsStaticArtifactWithoutService(t *testing.T) {
 	err := Validate(Config{App: "docs", Artifacts: []string{"dist/docs"}})
 	if err != nil {
@@ -55,6 +73,7 @@ func TestValidateAllowsStaticArtifactWithoutService(t *testing.T) {
 
 func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	cfg := Config{
+		Project:   "billing",
 		App:       "demo",
 		Build:     BuildConfig{Commands: []string{"npm run build"}},
 		Artifacts: []string{"dist/default"},
@@ -74,6 +93,9 @@ func TestResolveSubAppOverridesProjectDefaults(t *testing.T) {
 	}
 	if target.App != "demo-backend" {
 		t.Fatalf("app = %q", target.App)
+	}
+	if target.Project != "billing" {
+		t.Fatalf("project = %q", target.Project)
 	}
 	if !slices.Equal(target.Artifacts, []string{"backend/dist/api"}) {
 		t.Fatalf("artifacts = %#v", target.Artifacts)

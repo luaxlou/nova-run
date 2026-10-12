@@ -28,6 +28,10 @@ jobs:
             goarch: amd64
           - goos: darwin
             goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: windows
+            goarch: arm64
 
     steps:
       - name: Checkout code
@@ -52,15 +56,17 @@ jobs:
             echo "Release version is empty."
             exit 1
           fi
-          if [ "$GOOS" = "linux" ]; then
-            export CGO_ENABLED=0
+          export CGO_ENABLED=0
+          output="dist/nova-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "$GOOS" = "windows" ]; then
+            output="${output}.exe"
           fi
           go build \
             -trimpath \
             -ldflags "-s -w -X main.version=${release_version}" \
-            -o dist/nova-${{ matrix.goos }}-${{ matrix.goarch }} \
+            -o "$output" \
             ./cmd/nova
-          file dist/nova-${{ matrix.goos }}-${{ matrix.goarch }}
+          file "$output"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -85,16 +91,33 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release
+          missing=0
 
           for target in linux-amd64 linux-arm64 darwin-amd64 darwin-arm64; do
             nova_bin="artifacts/nova-${target}/nova-${target}"
             if [ ! -f "$nova_bin" ]; then
               echo "Missing artifact: $nova_bin"
+              missing=1
               continue
             fi
 
             cp "$nova_bin" "release/nova-${target}"
           done
+
+          for target in windows-amd64 windows-arm64; do
+            nova_bin="artifacts/nova-${target}/nova-${target}.exe"
+            if [ ! -f "$nova_bin" ]; then
+              echo "Missing artifact: $nova_bin"
+              missing=1
+              continue
+            fi
+
+            cp "$nova_bin" "release/nova-${target}.exe"
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
           if [ -z "$(ls -A release)" ]; then
             echo "No release packages were generated."

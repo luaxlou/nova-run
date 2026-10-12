@@ -20,6 +20,7 @@ import (
 type Client struct {
 	Endpoint string
 	Token    string
+	Project  string
 }
 
 type DeployResult struct {
@@ -61,6 +62,17 @@ func (c *Client) authHeader() string {
 		return ""
 	}
 	return "Bearer " + c.Token
+}
+
+func (c *Client) appPath(name string) (string, error) {
+	project := strings.TrimSpace(c.Project)
+	if project == "" {
+		return "", fmt.Errorf("project name required")
+	}
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("app name required")
+	}
+	return "/v2/projects/" + url.PathEscape(project) + "/apps/" + url.PathEscape(name), nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, body io.Reader, contentType string) ([]byte, error) {
@@ -186,7 +198,11 @@ func (c *Client) deployArtifact(ctx context.Context, name string, artifactReader
 		return DeployResult{}, fmt.Errorf("close multipart form: %w", err)
 	}
 
-	payload, err := c.doRequest(ctx, http.MethodPut, "/v1/apps/"+url.PathEscape(name), &body, mw.FormDataContentType())
+	path, err := c.appPath(name)
+	if err != nil {
+		return DeployResult{}, err
+	}
+	payload, err := c.doRequest(ctx, http.MethodPut, path, &body, mw.FormDataContentType())
 	if err != nil {
 		return DeployResult{}, err
 	}
@@ -239,10 +255,11 @@ func (c *Client) Deploy(ctx context.Context, name, artifactPath, version string)
 }
 
 func (c *Client) Start(ctx context.Context, name string) error {
-	if name == "" {
-		return fmt.Errorf("app name required")
+	path, err := c.appPath(name)
+	if err != nil {
+		return err
 	}
-	payload, err := c.doRequest(ctx, http.MethodPost, "/v1/apps/"+url.PathEscape(name)+"/start", nil, "")
+	payload, err := c.doRequest(ctx, http.MethodPost, path+"/start", nil, "")
 	if err != nil {
 		return err
 	}
@@ -250,10 +267,11 @@ func (c *Client) Start(ctx context.Context, name string) error {
 }
 
 func (c *Client) Stop(ctx context.Context, name string) error {
-	if name == "" {
-		return fmt.Errorf("app name required")
+	path, err := c.appPath(name)
+	if err != nil {
+		return err
 	}
-	payload, err := c.doRequest(ctx, http.MethodPost, "/v1/apps/"+url.PathEscape(name)+"/stop", nil, "")
+	payload, err := c.doRequest(ctx, http.MethodPost, path+"/stop", nil, "")
 	if err != nil {
 		return err
 	}
@@ -261,10 +279,11 @@ func (c *Client) Stop(ctx context.Context, name string) error {
 }
 
 func (c *Client) Restart(ctx context.Context, name string) error {
-	if name == "" {
-		return fmt.Errorf("app name required")
+	path, err := c.appPath(name)
+	if err != nil {
+		return err
 	}
-	payload, err := c.doRequest(ctx, http.MethodPost, "/v1/apps/"+url.PathEscape(name)+"/restart", nil, "")
+	payload, err := c.doRequest(ctx, http.MethodPost, path+"/restart", nil, "")
 	if err != nil {
 		return err
 	}
@@ -287,10 +306,11 @@ func (c *Client) Status(ctx context.Context, name string) (string, error) {
 }
 
 func (c *Client) AppStatus(ctx context.Context, name string) (AppStatus, error) {
-	if name == "" {
-		return AppStatus{}, fmt.Errorf("app name required")
+	path, err := c.appPath(name)
+	if err != nil {
+		return AppStatus{}, err
 	}
-	payload, err := c.doRequest(ctx, http.MethodGet, "/v1/apps/"+url.PathEscape(name)+"/status", nil, "")
+	payload, err := c.doRequest(ctx, http.MethodGet, path+"/status", nil, "")
 	if err != nil {
 		return AppStatus{}, err
 	}
@@ -306,10 +326,11 @@ func (c *Client) Logs(ctx context.Context, name string, follow bool) ([]string, 
 	if follow {
 		return nil, fmt.Errorf("follow mode should use LogsStream")
 	}
-	if name == "" {
-		return nil, fmt.Errorf("app name required")
+	path, err := c.appPath(name)
+	if err != nil {
+		return nil, err
 	}
-	path := "/v1/apps/" + url.PathEscape(name) + "/logs"
+	path += "/logs"
 	payload, err := c.doRequest(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
 		return nil, err
@@ -330,12 +351,13 @@ func (c *Client) Logs(ctx context.Context, name string, follow bool) ([]string, 
 }
 
 func (c *Client) LogsStream(ctx context.Context, name string, out io.Writer) error {
-	if name == "" {
-		return fmt.Errorf("app name required")
-	}
 	if out == nil {
 		return fmt.Errorf("output writer required")
 	}
-	path := "/v1/apps/" + url.PathEscape(name) + "/logs?follow=true"
+	path, err := c.appPath(name)
+	if err != nil {
+		return err
+	}
+	path += "/logs?follow=true"
 	return c.doRequestStream(ctx, http.MethodGet, path, nil, "", out)
 }

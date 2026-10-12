@@ -5,7 +5,7 @@ REPO="${NOVA_REPO:-luaxlou/nova-run}"
 VERSION="${NOVA_VERSION:-latest}"
 INSTALL_DIR="${NOVA_INSTALL_DIR:-/usr/local/bin}"
 SERVICE_NAME="${NOVA_SERVICE_NAME:-nova.service}"
-TOKEN_FILE="${NOVA_TOKEN_FILE:-/etc/nova/token}"
+AUTH_DIR="${NOVA_AUTH_DIR:-/etc/nova/auth/projects}"
 LISTEN_ADDR="${NOVA_LISTEN_ADDR:-:32102}"
 APP_ROOT="${NOVA_APP_ROOT:-/var/lib/nova/apps}"
 AGENT_ENDPOINT="${NOVA_AGENT_ENDPOINT:-}"
@@ -46,18 +46,9 @@ echo "Downloading nova from ${URL}"
 curl -fsSL "$URL" -o "$TMP_FILE"
 chmod +x "$TMP_FILE"
 
-mkdir -p "$INSTALL_DIR" "$(dirname "$TOKEN_FILE")" "$APP_ROOT"
+mkdir -p "$INSTALL_DIR" "$AUTH_DIR" "$APP_ROOT"
+chmod 700 "$AUTH_DIR"
 mv "$TMP_FILE" "${INSTALL_DIR}/nova"
-
-if [ ! -s "$TOKEN_FILE" ]; then
-  if command -v openssl >/dev/null 2>&1; then
-    openssl rand -hex 32 > "$TOKEN_FILE"
-  else
-    tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64 > "$TOKEN_FILE"
-    printf '\n' >> "$TOKEN_FILE"
-  fi
-  chmod 600 "$TOKEN_FILE"
-fi
 
 cat > "/etc/systemd/system/${SERVICE_NAME}" <<EOF
 [Unit]
@@ -66,7 +57,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=${INSTALL_DIR}/nova agent --listen ${LISTEN_ADDR} --app-root ${APP_ROOT} --token-file ${TOKEN_FILE}
+ExecStart=${INSTALL_DIR}/nova agent --listen ${LISTEN_ADDR} --app-root ${APP_ROOT} --auth-dir ${AUTH_DIR}
 Restart=on-failure
 RestartSec=2
 KillSignal=SIGTERM
@@ -101,7 +92,7 @@ echo "nova runtime installed"
 echo "binary: ${INSTALL_DIR}/nova"
 echo "service: ${SERVICE_NAME}"
 echo "app service template: nova@.service"
-echo "token: ${TOKEN_FILE}"
+echo "project auth directory: ${AUTH_DIR}"
 
 PORT="${LISTEN_ADDR##*:}"
 if [ -z "$PORT" ] || [ "$PORT" = "$LISTEN_ADDR" ]; then
@@ -112,6 +103,8 @@ if [ -z "$AGENT_ENDPOINT" ]; then
 fi
 
 echo
-echo "Nova Agent initialized. Use these values when running 'nova init' on your project machine:"
+echo "Nova Agent initialized. Create or replace one project's authorization with:"
+echo "  sudo nova auth set <project>"
+echo "Then use these values when running 'nova init' in that project:"
 echo "Nova Agent Endpoint: ${AGENT_ENDPOINT}"
-echo "Access token: sudo cat ${TOKEN_FILE}"
+echo "Project token: output of 'sudo nova auth set <project>'"

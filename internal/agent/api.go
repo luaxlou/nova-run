@@ -13,23 +13,25 @@ import (
 	"strings"
 
 	"github.com/luaxlou/glow-ops/internal/artifact"
+	"github.com/luaxlou/glow-ops/internal/authz"
 	"github.com/luaxlou/glow-ops/internal/deploy"
 	"github.com/luaxlou/glow-ops/internal/runtime"
 	"github.com/luaxlou/glow-ops/pkg/api"
 )
 
 type Server struct {
-	Token          string
 	AppRoot        string
+	AuthStore      *authz.Store
 	restartService func(string) error
 }
 
-func NewServer(appRoot, token string) *Server {
+func NewProjectServer(appRoot, authDir string) *Server {
 	cleanRoot := filepath.Clean(appRoot)
 	if err := runtime.EnsureAppServiceTemplate(cleanRoot); err != nil {
 		log.Printf("nova app service template setup failed: %v", err)
 	}
-	return &Server{Token: token, AppRoot: cleanRoot}
+	store := &authz.Store{Dir: filepath.Clean(authDir)}
+	return &Server{AppRoot: cleanRoot, AuthStore: store}
 }
 
 func (s *Server) restart(name string) error {
@@ -44,13 +46,71 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
 
-	protected := func(next http.HandlerFunc) http.HandlerFunc {
-		return RequireToken(s.Token)(next)
+	if s.AuthStore != nil {
+		mux.HandleFunc("/v2/projects/", s.handleProjectAPI)
 	}
-
-	mux.HandleFunc("/v1/apps", protected(s.handleListApps))
-	mux.HandleFunc("/v1/apps/", protected(s.handleApps))
 	return mux
+}
+
+func (s *Server) handleProjectAPI(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v2/projects/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 2 || parts[0] == "" || parts[1] != "apps" {
+		api.RenderJSONError(w, http.StatusNotFound, "unknown endpoint")
+		return
+	}
+	project := parts[0]
+	if err := authz.ValidateProjectName(project); err != nil {
+		api.RenderJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if token := ParseBearerToken(r); token == "" || !s.AuthStore.Verify(project, token) {
+		api.RenderJSONError(w, http.StatusUnauthorized, "invalid token")
+		return
+	}
+	if len(parts) == 2 {
+		if r.Method != http.MethodGet {
+			api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
+			return
+		}
+		s.handleProjectListApps(w, project)
+		return
+	}
+	if len(parts) > 4 {
+		api.RenderJSONError(w, http.StatusNotFound, "unknown endpoint")
+		return
+	}
+	app := parts[2]
+	if err := deploy.ValidateAppName(app); err != nil || strings.Contains(app, "--") {
+		api.RenderJSONError(w, http.StatusBadRequest, "invalid app name")
+		return
+	}
+	sub := ""
+	if len(parts) == 4 {
+		sub = parts[3]
+	}
+	s.handleScopedApp(w, r, project+"--"+app, app, sub)
+}
+
+func (s *Server) handleProjectListApps(w http.ResponseWriter, project string) {
+	prefix := project + "--"
+	names := []string{}
+	items, err := os.ReadDir(s.AppRoot)
+	if os.IsNotExist(err) {
+		api.RenderJSON(w, api.Response{Success: true, Data: names})
+		return
+	}
+	if err != nil {
+		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, item := range items {
+		if item.IsDir() && strings.HasPrefix(item.Name(), prefix) {
+			names = append(names, strings.TrimPrefix(item.Name(), prefix))
+		}
+	}
+	sort.Strings(names)
+	api.RenderJSON(w, api.Response{Success: true, Data: names})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -61,84 +121,45 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	api.RenderJSON(w, api.Response{Success: true, Data: map[string]string{"status": "ok"}})
 }
 
-func (s *Server) handleListApps(w http.ResponseWriter, _ *http.Request) {
-	names := []string{}
-	if _, err := os.Stat(s.AppRoot); err != nil {
-		if os.IsNotExist(err) {
-			api.RenderJSON(w, api.Response{Success: true, Data: names})
-			return
-		}
-		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	items, err := os.ReadDir(s.AppRoot)
-	if err != nil {
-		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	for _, item := range items {
-		if item.IsDir() {
-			names = append(names, item.Name())
-		}
-	}
-	sort.Strings(names)
-	api.RenderJSON(w, api.Response{Success: true, Data: names})
-}
-
-func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/v1/apps/")
-	path = strings.Trim(path, "/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 1 || parts[0] == "" {
-		api.RenderJSONError(w, http.StatusBadRequest, "app name required")
-		return
-	}
-
-	name := parts[0]
-	if err := deploy.ValidateAppName(name); err != nil {
-		api.RenderJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-
-	if len(parts) == 1 {
+func (s *Server) handleScopedApp(w http.ResponseWriter, r *http.Request, runtimeName, displayName, sub string) {
+	if sub == "" {
 		switch r.Method {
 		case http.MethodPut:
-			s.handleDeploy(w, r, name)
+			s.handleDeployAs(w, r, runtimeName, displayName)
 		case http.MethodDelete:
-			s.handleDelete(w, r, name)
+			s.handleDeleteAs(w, r, runtimeName, displayName)
 		default:
 			api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
 		}
 		return
 	}
 
-	sub := parts[1]
 	ctrl := runtime.Controller{}
 	switch r.Method {
 	case http.MethodPost:
 		switch sub {
 		case "start":
-			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, name)) {
+			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, runtimeName)) {
 				api.RenderJSONError(w, http.StatusBadRequest, "app is static and has no service command")
 				return
 			}
-			if err := ctrl.Start(name); err != nil {
+			if err := ctrl.Start(runtimeName); err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 			api.RenderJSON(w, api.Response{Success: true, Message: "start requested"})
 		case "stop":
-			if err := ctrl.Stop(name); err != nil {
+			if err := ctrl.Stop(runtimeName); err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 			api.RenderJSON(w, api.Response{Success: true, Message: "stop requested"})
 		case "restart":
-			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, name)) {
+			if !artifact.HasRunBinary(filepath.Join(s.AppRoot, runtimeName)) {
 				api.RenderJSONError(w, http.StatusBadRequest, "app is static and has no service command")
 				return
 			}
-			if err := ctrl.Restart(name); err != nil {
+			if err := ctrl.Restart(runtimeName); err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -149,7 +170,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		switch sub {
 		case "status":
-			status, err := resolveAppStatus(s.AppRoot, name, ctrl.Status)
+			status, err := resolveAppStatus(s.AppRoot, runtimeName, ctrl.Status)
 			if err != nil {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 				return
@@ -164,10 +185,10 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if strings.EqualFold(query.Get("follow"), "1") || strings.EqualFold(query.Get("follow"), "true") {
-				s.handleLogsFollow(w, r, name, lines)
+				s.handleLogsFollow(w, r, runtimeName, lines)
 				return
 			}
-			cmd := runtime.JournalTailCommand(name, false, lines)
+			cmd := runtime.JournalTailCommand(runtimeName, false, lines)
 			output, err := cmd.CombinedOutput()
 			if err != nil && len(output) == 0 {
 				api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
@@ -250,6 +271,10 @@ func (s streamWriter) Write(p []byte) (int, error) {
 }
 
 func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name string) {
+	s.handleDeployAs(w, r, name, name)
+}
+
+func (s *Server) handleDeployAs(w http.ResponseWriter, r *http.Request, name, displayName string) {
 	if r.Method != http.MethodPut {
 		api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
 		return
@@ -295,9 +320,9 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name strin
 	} else if ok && current == version {
 		api.RenderJSON(w, api.Response{
 			Success: true,
-			Message: fmt.Sprintf("app %s already at version %s", name, version),
+			Message: fmt.Sprintf("app %s already at version %s", displayName, version),
 			Data: map[string]any{
-				"app":     name,
+				"app":     displayName,
 				"version": version,
 				"skipped": true,
 				"message": "already latest",
@@ -321,9 +346,9 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name strin
 	}
 	api.RenderJSON(w, api.Response{
 		Success: true,
-		Message: fmt.Sprintf("app %s deployed version %s", name, version),
+		Message: fmt.Sprintf("app %s deployed version %s", displayName, version),
 		Data: map[string]any{
-			"app":     name,
+			"app":     displayName,
 			"version": version,
 			"skipped": false,
 			"message": "deployed",
@@ -332,6 +357,10 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request, name strin
 }
 
 func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, name string) {
+	s.handleDeleteAs(w, r, name, name)
+}
+
+func (s *Server) handleDeleteAs(w http.ResponseWriter, r *http.Request, name, displayName string) {
 	if r.Method != http.MethodDelete {
 		api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
 		return
@@ -349,5 +378,5 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, name strin
 		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	api.RenderJSON(w, api.Response{Success: true, Message: fmt.Sprintf("app %s removed", name)})
+	api.RenderJSON(w, api.Response{Success: true, Message: fmt.Sprintf("app %s removed", displayName)})
 }

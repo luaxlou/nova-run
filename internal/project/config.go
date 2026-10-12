@@ -6,12 +6,15 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/luaxlou/glow-ops/internal/authz"
+	"github.com/luaxlou/glow-ops/internal/deploy"
 	"gopkg.in/yaml.v3"
 )
 
 const ConfigFile = "nova.yaml"
 
 type Config struct {
+	Project   string         `json:"project,omitempty" yaml:"project,omitempty"`
 	App       string         `json:"app,omitempty" yaml:"app,omitempty"`
 	Start     string         `json:"start,omitempty" yaml:"start,omitempty"`
 	Build     BuildConfig    `json:"build,omitempty" yaml:"build,omitempty"`
@@ -203,11 +206,32 @@ func Validate(cfg Config) error {
 }
 
 type Target struct {
+	Project   string
 	Name      string
 	App       string
 	Build     BuildConfig
 	Artifacts []string
 	Service   ServiceConfig
+}
+
+func ValidateRemoteProject(cfg Config) error {
+	project := strings.TrimSpace(cfg.Project)
+	if project == "" {
+		return fmt.Errorf("%s project is required for remote operations", ConfigFile)
+	}
+	if err := authz.ValidateProjectName(project); err != nil {
+		return fmt.Errorf("%s project: %w", ConfigFile, err)
+	}
+	targets, err := ResolveAll(cfg)
+	if err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if err := deploy.ValidateAppName(target.App); err != nil || strings.Contains(target.App, "--") {
+			return fmt.Errorf("%s remote app %q is invalid or contains reserved delimiter --", ConfigFile, target.App)
+		}
+	}
+	return nil
 }
 
 type LifecycleTarget struct {
@@ -351,6 +375,7 @@ func orderedAppNames(cfg Config) []string {
 
 func resolveApp(cfg Config, name string, app App) (Target, error) {
 	target := Target{
+		Project:   strings.TrimSpace(cfg.Project),
 		Name:      name,
 		App:       firstNonEmpty(app.App, cfg.App, name),
 		Build:     mergeBuild(cfg.Build, app.Build),

@@ -19,6 +19,13 @@ type Target struct {
 	Start       string
 }
 
+type Result struct {
+	App        string
+	State      string
+	OutputPath string
+	Already    bool
+}
+
 type Paths struct {
 	Dir     string
 	Lock    string

@@ -1,3 +1,5 @@
+//go:build !windows
+
 package localsupervisor
 
 import (
@@ -32,13 +34,6 @@ type Manager struct {
 	StopGrace        time.Duration
 	launchSupervisor launchFunc
 	discoverPorts    func(int) []int
-}
-
-type Result struct {
-	App        string
-	State      string
-	OutputPath string
-	Already    bool
 }
 
 func NewManager() (*Manager, error) {

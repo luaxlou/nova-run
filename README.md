@@ -48,7 +48,14 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex 或 Claude Code 理解怎样建立 Nova 项目，以及怎样在不部署、不改变进程或云资源的前提下检查问题。两者使用同一个产品版本，Plugin 从仓库根目录的同一份 `skills/` 提供 init 与 doctor 能力。Codex 通过 `$nova:init`、`$nova:doctor` 调用；Claude Code 使用 `/nova:init`、`/nova:doctor`。
 
-Codex：
+Codex 可以像 EV 一样从 `digitagent` 的 Gitee Marketplace 安装：
+
+```bash
+codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.9
+codex plugin add nova@nova
+```
+
+GitHub 镜像保留同一版本；无法使用 Gitee SSH 时，可以改用：
 
 ```bash
 codex plugin marketplace add luaxlou/nova-run --ref v0.2.9

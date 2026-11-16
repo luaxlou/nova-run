@@ -107,9 +107,9 @@ nova status [app|all] [-r|--remote]
 
 ## 制品与远端运行
 
-`service.command` 仍是远端生产进程入口。发布时 Nova 生成 artifact 根目录的 `run` 脚本和 `nova.app.yaml`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
+`service.command` 仍是远端生产进程入口。发布目录型 Service Artifact 时，Nova 在通用外层包生成 `run` 和 `nova.app.yaml`，把项目声明的 Artifact 原样复制到 `artifact/`，并从该目录执行 `service.command`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
 
-因为这两个文件属于 Nova 外层部署协议，要求内容闭包保持不变的第三方制品不得直接作为 service artifact 根目录。项目构建应形成一个外层目录，把该制品完整放在子目录中，再让 `service.command` 从外层根目录调用它。例如，配置 `artifacts: [dist/example]` 时可以把不透明制品放在 `dist/example/artifact/`，并使用 `framework-runtime ./artifact`。这是两个独立系统通过项目拥有的命令和目录边界协作，不表示 Nova 理解或适配该 framework。
+这层通用包装使要求内容闭包保持不变的第三方制品可以直接成为 `artifacts` 指向的目录，不需要项目增加另一条打包命令。Nova 不解析内部清单，也不改变内部文件；它只隔离自己的部署元数据并在声明的 Artifact 根执行项目给出的命令。这是两个独立系统通过命令和目录边界协作，不表示 Nova 理解或适配该 framework。
 
 Artifact 清单示例：
 

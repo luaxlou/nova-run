@@ -2,7 +2,7 @@
 name: doctor
 description: Diagnose a Nova Run project's local configuration, CLI compatibility, credential binding, and read-only status, then apply narrowly scoped local repairs only with explicit authorization. Do not use it to deploy, change process state, mutate cloud resources, or perform implicit external writes.
 metadata:
-  novaRunRelease: "0.2.9"
+  novaRunRelease: "0.2.10"
 ---
 
 # Nova Run Doctor
@@ -22,7 +22,7 @@ Check the facts in their natural dependency order:
 - the project and app identities are valid and unambiguous;
 - every selector resolves to a repeatable build command and exactly one plausible artifact path;
 - local `start` commands are long-running foreground commands and contain no obsolete `run` or `stop` fields;
-- each configured `service.command` is valid relative to the packaged artifact and contains no repository secret; remember that a directory's contents become the packaged root, a single-file service artifact is staged there under its basename, and Nova adds `run` plus `nova.app.yaml` to a service directory root;
+- each configured `service.command` is valid relative to the declared Artifact root and contains no repository secret; remember that a directory service artifact is preserved below Nova's outer deployment wrapper and used as the command working directory, while a single-file service artifact is staged at the wrapper root under its basename;
 - any immutable or closed third-party Artifact remains nested below an outer Nova package root, so Nova's packaging files do not alter that inner Artifact and the service command addresses the nested path;
 - referenced paths and scripts agree with the repository, distinguishing an expected not-yet-built output from a broken path; and
 - the current project has a readable local target binding without exposing its token.

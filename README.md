@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.9 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.10 bash
 ```
 
 ## 安装 Nova Run Plugin
@@ -51,14 +51,14 @@ CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex
 Codex 可以像 EV 一样从 `digitagent` 的 Gitee Marketplace 安装：
 
 ```bash
-codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.9
+codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.10
 codex plugin add nova@nova
 ```
 
 GitHub 镜像保留同一版本；无法使用 Gitee SSH 时，可以改用：
 
 ```bash
-codex plugin marketplace add luaxlou/nova-run --ref v0.2.9
+codex plugin marketplace add luaxlou/nova-run --ref v0.2.10
 codex plugin add nova@nova
 ```
 
@@ -225,16 +225,18 @@ Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立�
 
 ## 制品清单
 
-当项目配置声明了 `service.command`，Nova 会在发布前生成包含 `run` 和 `nova.app.yaml` 的部署包。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
+当项目配置声明了 `service.command`，Nova 会在发布前生成包含 `run` 和 `nova.app.yaml` 的部署包。目录型 Service Artifact 会被原样放进 Nova 外层包的 `artifact/`，`run` 先进入该目录，再执行相对于项目所声明 Artifact 根的 `service.command`；项目不需要为 Nova 编写二次打包命令。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
 
-如果项目要携带一个禁止增加文件的不可变制品，构建命令应先创建外层 Nova 目录，再把该制品完整放进子目录；`service.command` 从外层根目录调用内部 Runtime。不要把不可变制品目录本身配置成 Nova 的 service artifact 根目录，因为 `run` 和 `nova.app.yaml` 属于外层 Nova 协议。例如：
+项目可以直接把禁止增加文件的不可变目录配置为 `artifacts`；Nova 的通用部署包装会保持它的内容闭包不变。例如最终部署布局是：
 
 ```text
-dist/example/
-└── artifact/     # 外部 Runtime 拥有并验证的不可变制品
+deployment/
+├── artifact/     # 项目构建产生、外部 Runtime 验证的不可变制品
+├── run           # Nova 外层启动器
+└── nova.app.yaml # Nova 外层清单
 ```
 
-对应命令可以是 `framework-runtime ./artifact`；具体命令、环境和内部目录仍由项目与该 Runtime 的公开合同决定。
+`service.command` 的工作目录是 `artifact/`，因此可以直接写该产品公开的生产入口，例如 `ev start api-server --prod`；具体命令、环境和内部目录仍由项目与该 Runtime 的公开合同决定。
 
 示例：
 

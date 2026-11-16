@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-11-16
+
+### Changed
+- 目录型 Service Artifact 由 Nova 在部署时通用包装到独立 `artifact/` 工作目录，项目不再需要为 Nova 元数据暴露第二条打包命令。
+- 明确 EV 等外部产品的构建和生产启动命令仍由产品自身拥有；Nova 只执行公开命令并保持不可变 Artifact 闭包。
+
 ## [0.2.9] - 2026-11-16
 
 ### Changed

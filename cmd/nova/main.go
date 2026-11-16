@@ -538,10 +538,23 @@ func prepareDeployArtifact(artifactPath string, target project.Target) (string, 
 		return "", cleanup, fmt.Errorf("artifact path invalid: %w", err)
 	}
 	if info.IsDir() {
-		if err := prepareServiceArtifact(artifactPath, target); err != nil {
-			return "", cleanup, err
+		if strings.TrimSpace(target.Service.Command) == "" {
+			return artifactPath, cleanup, nil
 		}
-		return artifactPath, cleanup, nil
+		stagingDir, err := os.MkdirTemp("", "nova-artifact-stage-*")
+		if err != nil {
+			return "", cleanup, fmt.Errorf("create artifact staging dir: %w", err)
+		}
+		cleanup = func() { _ = os.RemoveAll(stagingDir) }
+		if err := os.CopyFS(filepath.Join(stagingDir, "artifact"), os.DirFS(artifactPath)); err != nil {
+			cleanup()
+			return "", func() {}, fmt.Errorf("stage service artifact directory: %w", err)
+		}
+		if err := prepareServiceArtifact(stagingDir, target, "artifact"); err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+		return stagingDir, cleanup, nil
 	}
 	if strings.TrimSpace(target.Service.Command) == "" {
 		return artifactPath, cleanup, nil
@@ -557,7 +570,7 @@ func prepareDeployArtifact(artifactPath string, target project.Target) (string, 
 		cleanup()
 		return "", func() {}, err
 	}
-	if err := prepareServiceArtifact(stagingDir, target); err != nil {
+	if err := prepareServiceArtifact(stagingDir, target, ""); err != nil {
 		cleanup()
 		return "", func() {}, err
 	}
@@ -584,11 +597,11 @@ func copyFile(srcPath, dstPath string, mode os.FileMode) error {
 	return nil
 }
 
-func prepareServiceArtifact(artifactDir string, target project.Target) error {
+func prepareServiceArtifact(artifactDir string, target project.Target, workingDirectory string) error {
 	if strings.TrimSpace(target.Service.Command) == "" {
 		return nil
 	}
-	if err := writeRunScript(artifactDir, target.Service); err != nil {
+	if err := writeRunScript(artifactDir, target.Service, workingDirectory); err != nil {
 		return err
 	}
 	files, err := topLevelArtifactFiles(artifactDir)
@@ -607,7 +620,7 @@ func prepareServiceArtifact(artifactDir string, target project.Target) error {
 	return nil
 }
 
-func writeRunScript(artifactDir string, service project.ServiceConfig) error {
+func writeRunScript(artifactDir string, service project.ServiceConfig, workingDirectory string) error {
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return fmt.Errorf("create artifact dir: %w", err)
 	}
@@ -619,6 +632,9 @@ func writeRunScript(artifactDir string, service project.ServiceConfig) error {
 	sort.Strings(keys)
 	for _, key := range keys {
 		lines = append(lines, fmt.Sprintf("export %s=%s", key, shellQuote(service.Env[key])))
+	}
+	if workingDirectory != "" {
+		lines = append(lines, "cd "+shellQuote(workingDirectory))
 	}
 	lines = append(lines, "exec sh -lc "+shellQuote(service.Command))
 	content := strings.Join(lines, "\n") + "\n"

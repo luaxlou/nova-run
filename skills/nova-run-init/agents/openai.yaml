@@ -1,4 +1,0 @@
-interface:
-  display_name: "Nova Run Init"
-  short_description: "Set up Nova Run project configuration safely"
-  default_prompt: "Use $nova-run-init to establish or update this repository's Nova Run project configuration without deploying it."

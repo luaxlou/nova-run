@@ -1,11 +1,11 @@
 {
-  "name": "nova-run",
+  "name": "nova",
   "interface": {
     "displayName": "Nova Run"
   },
   "plugins": [
     {
-      "name": "nova-run",
+      "name": "nova",
       "source": {
         "source": "local",
         "path": "./"

@@ -39,10 +39,10 @@ func TestPackagePluginIncludesOnlyPluginSurfaces(t *testing.T) {
 		".claude-plugin/plugin.json",
 		".codex-plugin/plugin.json",
 		"docs/agent-plugin.md",
-		"skills/nova-run-doctor/SKILL.md",
-		"skills/nova-run-doctor/agents/openai.yaml",
-		"skills/nova-run-init/SKILL.md",
-		"skills/nova-run-init/agents/openai.yaml",
+		"skills/doctor/SKILL.md",
+		"skills/doctor/agents/openai.yaml",
+		"skills/init/SKILL.md",
+		"skills/init/agents/openai.yaml",
 	}
 	sort.Strings(want)
 	if strings.Join(files, "\n") != strings.Join(want, "\n") {
@@ -60,21 +60,21 @@ func TestPackagePluginRejectsVersionDrift(t *testing.T) {
 		},
 		"marketplace": func(root string) {
 			writePluginJSON(t, filepath.Join(root, ".claude-plugin/marketplace.json"), map[string]any{
-				"name": "nova-run", "version": "9.9.9",
-				"plugins": []map[string]any{{"name": "nova-run", "source": "./", "version": "1.2.3"}},
+				"name": "nova", "version": "9.9.9",
+				"plugins": []map[string]any{{"name": "nova", "source": "./", "version": "1.2.3"}},
 			})
 		},
 		"marketplace Plugin": func(root string) {
 			writePluginJSON(t, filepath.Join(root, ".claude-plugin/marketplace.json"), map[string]any{
-				"name": "nova-run", "version": "1.2.3",
-				"plugins": []map[string]any{{"name": "nova-run", "source": "./", "version": "9.9.9"}},
+				"name": "nova", "version": "1.2.3",
+				"plugins": []map[string]any{{"name": "nova", "source": "./", "version": "9.9.9"}},
 			})
 		},
 		"init Skill": func(root string) {
-			writePluginSkill(t, root, "nova-run-init", "9.9.9")
+			writePluginSkill(t, root, "init", "9.9.9")
 		},
 		"doctor Skill": func(root string) {
-			writePluginSkill(t, root, "nova-run-doctor", "9.9.9")
+			writePluginSkill(t, root, "doctor", "9.9.9")
 		},
 	}
 
@@ -112,7 +112,7 @@ func TestPackagePluginIsReproducible(t *testing.T) {
 	for _, relative := range []string{
 		".codex-plugin/plugin.json",
 		".claude-plugin/marketplace.json",
-		"skills/nova-run-init/SKILL.md",
+		"skills/init/SKILL.md",
 		"docs/agent-plugin.md",
 	} {
 		path := filepath.Join(root, relative)
@@ -140,7 +140,7 @@ func newPluginPackageFixture(t *testing.T) string {
 	root := t.TempDir()
 	for _, directory := range []string{
 		"scripts", ".codex-plugin", ".claude-plugin", ".agents/plugins",
-		"skills/nova-run-init", "skills/nova-run-doctor", "docs",
+		"skills/init", "skills/doctor", "docs",
 	} {
 		if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
 			t.Fatal(err)
@@ -157,23 +157,23 @@ func newPluginPackageFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	writePluginJSON(t, filepath.Join(root, ".codex-plugin/plugin.json"), map[string]any{
-		"name": "nova-run", "version": "1.2.3", "skills": "./skills/",
+		"name": "nova", "version": "1.2.3", "skills": "./skills/",
 		"interface": map[string]any{"capabilities": []string{"skills"}},
 	})
 	writePluginJSON(t, filepath.Join(root, ".claude-plugin/plugin.json"), map[string]any{
-		"name": "nova-run", "version": "1.2.3", "skills": "./skills/",
+		"name": "nova", "version": "1.2.3", "skills": "./skills/",
 	})
 	writePluginJSON(t, filepath.Join(root, ".claude-plugin/marketplace.json"), map[string]any{
-		"name": "nova-run", "version": "1.2.3",
-		"plugins": []map[string]any{{"name": "nova-run", "source": "./", "version": "1.2.3"}},
+		"name": "nova", "version": "1.2.3",
+		"plugins": []map[string]any{{"name": "nova", "source": "./", "version": "1.2.3"}},
 	})
 	writePluginJSON(t, filepath.Join(root, ".agents/plugins/marketplace.json"), map[string]any{
-		"name": "nova-run", "plugins": []map[string]any{{
-			"name": "nova-run", "source": map[string]any{"source": "local", "path": "./"},
+		"name": "nova", "plugins": []map[string]any{{
+			"name": "nova", "source": map[string]any{"source": "local", "path": "./"},
 		}},
 	})
-	writePluginSkill(t, root, "nova-run-init", "1.2.3")
-	writePluginSkill(t, root, "nova-run-doctor", "1.2.3")
+	writePluginSkill(t, root, "init", "1.2.3")
+	writePluginSkill(t, root, "doctor", "1.2.3")
 	if err := os.WriteFile(filepath.Join(root, "docs/agent-plugin.md"), []byte("# Nova Run Plugin\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

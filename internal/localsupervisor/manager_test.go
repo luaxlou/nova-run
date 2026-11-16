@@ -189,10 +189,12 @@ func TestStartAllPreflightsBeforeMutation(t *testing.T) {
 func TestStopEscalatesToKillAfterGrace(t *testing.T) {
 	m := testManager(t)
 	m.StopGrace = 100 * time.Millisecond
-	target := testTarget(t, "trap '' TERM; while :; do sleep 1; done")
+	events := filepath.Join(t.TempDir(), "events")
+	target := testTarget(t, "trap '' TERM; printf ready, >> "+events+"; while :; do sleep 1; done")
 	if _, err := m.Start(context.Background(), target); err != nil {
 		t.Fatal(err)
 	}
+	waitForEvents(t, events, 1)
 	started := time.Now()
 	if _, err := m.Stop(context.Background(), target); err != nil {
 		t.Fatal(err)

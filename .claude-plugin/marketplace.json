@@ -1,16 +1,16 @@
 {
-  "name": "nova-run",
+  "name": "nova",
   "owner": {
     "name": "luaxlou"
   },
   "description": "Nova Run CLI and Agent skills delivered as one versioned product.",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "plugins": [
     {
-      "name": "nova-run",
+      "name": "nova",
       "source": "./",
       "description": "Nova Run CLI and Agent skills for initializing and diagnosing Nova-managed deployment projects.",
-      "version": "0.2.8"
+      "version": "0.2.9"
     }
   ]
 }

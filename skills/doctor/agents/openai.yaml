@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nova Run Doctor"
+  short_description: "Diagnose Nova Run and propose safe local repairs"
+  default_prompt: "Use $nova:doctor to inspect this Nova Run project read-only and explain any repair before changing it."

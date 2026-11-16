@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-11-16
+
+### Changed
+- Plugin 与 Skill 使用和 EV 一致的命名空间：Codex 通过 `$nova:init`、`$nova:doctor` 调用，Claude Code 通过 `/nova:init`、`/nova:doctor` 调用。
+
+### Fixed
+- 修复 supervisor 强制停止测试的启动竞态，等待测试进程安装 TERM trap 后再验证 grace period，避免 Release CI 偶发失败。
+
 ## [0.2.8] - 2026-11-16
 
 ### Added
-- 新增可由 Codex 与 Claude Code 安装的 Nova Run Plugin，并从同一份 `skills/` 分发 `nova-run-init` 与 `nova-run-doctor`。
+- 新增可由 Codex 与 Claude Code 安装的 Nova Run Plugin，并从同一份 `skills/` 分发项目初始化与诊断能力。
 - 新增独立、平台无关的 Plugin Release 归档及清单、Skill 和版本一致性验证。
 
 ### Changed

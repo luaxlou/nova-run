@@ -41,32 +41,32 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.8 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.9 bash
 ```
 
 ## 安装 Nova Run Plugin
 
-CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex 或 Claude Code 理解怎样建立 Nova 项目，以及怎样在不部署、不改变进程或云资源的前提下检查问题。两者使用同一个产品版本，Plugin 从仓库根目录的同一份 `skills/` 提供 init 与 doctor 能力。Codex 通过 `$nova-run-init`、`$nova-run-doctor` 调用；Claude Code 使用 `/nova-run:nova-run-init`、`/nova-run:nova-run-doctor`。
+CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex 或 Claude Code 理解怎样建立 Nova 项目，以及怎样在不部署、不改变进程或云资源的前提下检查问题。两者使用同一个产品版本，Plugin 从仓库根目录的同一份 `skills/` 提供 init 与 doctor 能力。Codex 通过 `$nova:init`、`$nova:doctor` 调用；Claude Code 使用 `/nova:init`、`/nova:doctor`。
 
 Codex：
 
 ```bash
-codex plugin marketplace add luaxlou/nova-run --ref main
-codex plugin add nova-run@nova-run
+codex plugin marketplace add luaxlou/nova-run --ref v0.2.9
+codex plugin add nova@nova
 ```
 
 Claude Code：
 
 ```bash
 claude plugin marketplace add luaxlou/nova-run
-claude plugin install nova-run@nova-run
+claude plugin install nova@nova
 ```
 
 正式发布后，可以把 Marketplace 固定到对应的 `vX.Y.Z` tag；更新 Plugin 后请重新打开会话，让宿主加载新版本。Plugin 安装不会替代上面的 CLI 安装，也不会自动安装服务器 Agent 或配置阿里云。完整的分发结构和安全边界见 [Agent Plugin 说明](docs/agent-plugin.md)。
 
 ## 初始化项目
 
-在 Codex 中使用 `$nova-run-init`，或在 Claude Code 中使用 `/nova-run:nova-run-init`。它会先根据项目实际的构建入口、制品和运行方式建立或维护 `nova.yaml`。只有你明确要求且已有安全凭据输入时，它才继续写入本机项目绑定；它不会部署、修改进程、安装远端 Agent，或创建和调整阿里云资源。
+在 Codex 中使用 `$nova:init`，或在 Claude Code 中使用 `/nova:init`。它会先根据项目实际的构建入口、制品和运行方式建立或维护 `nova.yaml`。只有你明确要求且已有安全凭据输入时，它才继续写入本机项目绑定；它不会部署、修改进程、安装远端 Agent，或创建和调整阿里云资源。
 
 如果不使用 Plugin，也可以按 [项目部署配置](#项目部署配置)手工编写 `nova.yaml`。现有 `nova init` 命令不会创建这份文件；它只在配置有效后，把已有 Nova Agent 的 Endpoint 和项目 token 绑定到当前项目：
 
@@ -82,7 +82,7 @@ nova init
 nova target list
 ```
 
-要检查已有项目时，在 Codex 使用 `$nova-run-doctor`，或在 Claude Code 使用 `/nova-run:nova-run-doctor`。Doctor 默认只读地核对 CLI 版本、`nova.yaml`、仓库事实和本地目标绑定；它会先解释具体问题与最小修复，只有得到对该项修改的明确授权后才改动本地文件。Doctor 不会把一次检查解释成部署、生命周期变更、凭据轮换或云资源操作的授权。
+要检查已有项目时，在 Codex 使用 `$nova:doctor`，或在 Claude Code 使用 `/nova:doctor`。Doctor 默认只读地核对 CLI 版本、`nova.yaml`、仓库事实和本地目标绑定；它会先解释具体问题与最小修复，只有得到对该项修改的明确授权后才改动本地文件。Doctor 不会把一次检查解释成部署、生命周期变更、凭据轮换或云资源操作的授权。
 
 ## 本地生命周期
 

@@ -1,8 +1,8 @@
 ---
-name: nova-run-doctor
+name: doctor
 description: Diagnose a Nova Run project's local configuration, CLI compatibility, credential binding, and read-only status, then apply narrowly scoped local repairs only with explicit authorization. Do not use it to deploy, change process state, mutate cloud resources, or perform implicit external writes.
 metadata:
-  novaRunRelease: "0.2.8"
+  novaRunRelease: "0.2.9"
 ---
 
 # Nova Run Doctor

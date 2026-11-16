@@ -56,8 +56,8 @@ def require_version(relative_path, actual, field="version"):
 for manifest_path in (".codex-plugin/plugin.json", ".claude-plugin/plugin.json"):
     manifest = read_json(manifest_path)
     require_version(manifest_path, manifest.get("version"))
-    if manifest.get("name") != "nova-run" or manifest.get("skills") != "./skills/":
-        raise SystemExit(f"{manifest_path} must expose nova-run from ./skills/")
+    if manifest.get("name") != "nova" or manifest.get("skills") != "./skills/":
+        raise SystemExit(f"{manifest_path} must expose nova from ./skills/")
 
 codex_manifest = read_json(".codex-plugin/plugin.json")
 capabilities = codex_manifest.get("interface", {}).get("capabilities")
@@ -68,42 +68,42 @@ marketplace_path = ".claude-plugin/marketplace.json"
 marketplace = read_json(marketplace_path)
 require_version(marketplace_path, marketplace.get("version"))
 plugins = marketplace.get("plugins")
-if marketplace.get("name") != "nova-run" or not isinstance(plugins, list) or len(plugins) != 1:
-    raise SystemExit(f"{marketplace_path} must declare exactly one nova-run Plugin")
+if marketplace.get("name") != "nova" or not isinstance(plugins, list) or len(plugins) != 1:
+    raise SystemExit(f"{marketplace_path} must declare exactly one nova Plugin")
 for index, plugin in enumerate(plugins):
     if not isinstance(plugin, dict):
         raise SystemExit(f"{marketplace_path} plugins[{index}] must be an object")
     require_version(marketplace_path, plugin.get("version"), f"plugins[{index}].version")
-    if plugin.get("name") != "nova-run" or plugin.get("source") != "./":
-        raise SystemExit(f"{marketplace_path} plugins[{index}] must resolve nova-run from ./")
+    if plugin.get("name") != "nova" or plugin.get("source") != "./":
+        raise SystemExit(f"{marketplace_path} plugins[{index}] must resolve nova from ./")
 
 # The portable Agents marketplace intentionally has no release version, but it
 # is required in every Plugin archive and must remain valid JSON.
 agents_marketplace_path = ".agents/plugins/marketplace.json"
 agents_marketplace = read_json(agents_marketplace_path)
 agents_plugins = agents_marketplace.get("plugins")
-if agents_marketplace.get("name") != "nova-run" or not isinstance(agents_plugins, list) or len(agents_plugins) != 1:
-    raise SystemExit(f"{agents_marketplace_path} must declare exactly one nova-run Plugin")
+if agents_marketplace.get("name") != "nova" or not isinstance(agents_plugins, list) or len(agents_plugins) != 1:
+    raise SystemExit(f"{agents_marketplace_path} must declare exactly one nova Plugin")
 agents_plugin = agents_plugins[0]
 agents_source = agents_plugin.get("source") if isinstance(agents_plugin, dict) else None
 if (
     not isinstance(agents_plugin, dict)
-    or agents_plugin.get("name") != "nova-run"
+    or agents_plugin.get("name") != "nova"
     or not isinstance(agents_source, dict)
     or agents_source.get("source") != "local"
     or agents_source.get("path") != "./"
 ):
-    raise SystemExit(f"{agents_marketplace_path} must resolve nova-run from the repository root")
+    raise SystemExit(f"{agents_marketplace_path} must resolve nova from the repository root")
 
 skill_root = root / "skills"
 skill_names = sorted(path.name for path in skill_root.iterdir() if path.is_dir()) if skill_root.is_dir() else []
-expected_skills = ["nova-run-doctor", "nova-run-init"]
+expected_skills = ["doctor", "init"]
 if skill_names != expected_skills:
     raise SystemExit(f"Plugin must expose exactly these Skills: {', '.join(expected_skills)}")
 if (root / ".agents/skills").exists():
     raise SystemExit("Keep product Skills in skills/; .agents/skills would create duplicate discovery")
 
-for skill_name in ("nova-run-init", "nova-run-doctor"):
+for skill_name in ("init", "doctor"):
     relative_path = f"skills/{skill_name}/SKILL.md"
     path = root / relative_path
     try:

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-11-16
+
+### Changed
+- Init 与 Doctor 依据公开命令的阶段所有权区分构建、开发和生产入口，拒绝泄漏内部编译或二次打包步骤。
+- Plugin 以通用不透明命令边界描述外部产品，不再点名或暗示与特定产品存在适配关系。
+
 ## [0.2.10] - 2026-11-16
 
 ### Changed

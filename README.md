@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.10 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.11 bash
 ```
 
 ## 安装 Nova Run Plugin
@@ -51,14 +51,14 @@ CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex
 Codex 可以像 EV 一样从 `digitagent` 的 Gitee Marketplace 安装：
 
 ```bash
-codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.10
+codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.11
 codex plugin add nova@nova
 ```
 
 GitHub 镜像保留同一版本；无法使用 Gitee SSH 时，可以改用：
 
 ```bash
-codex plugin marketplace add luaxlou/nova-run --ref v0.2.10
+codex plugin marketplace add luaxlou/nova-run --ref v0.2.11
 codex plugin add nova@nova
 ```
 

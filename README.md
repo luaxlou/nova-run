@@ -217,11 +217,24 @@ nova logs sbom-platform-backend -f
 
 上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品路径；这个路径可以是目录，也可以是单个文件。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
 
+Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立的系统。Nova 不解析外部产品清单，也不加载其 Toolchain Adapter；项目自己的构建命令负责生成 Nova 要交付的路径。仓库里出现某种 framework manifest，并不表示 Nova 需要对该 framework 做原生适配。
+
+例如，EV protocol 3 工程可以把 `ev check` 和 `ev build [app]` 直接写入 `build.commands`，也可以明确选择 `ev dev <app>` 或 `ev start <app> [--prod]` 作为被 Nova 调用的生命周期命令。这些命令的清单解析、Adapter 选择、Artifact 构建、开发和启动语义都属于 EV；Nova 只观察进程与退出状态并封装配置的路径。这是命令级共生，不是 Nova 对 EV 的原生适配，也不表示 Nova 取代 EV 的开发和启动入口。
+
 `nova deploy` 只接受干净的 Git 工作区。每次成功部署都会把当前 Git HEAD 短 SHA 写入服务端部署元数据；`nova status --remote` 会展示该 `version`。当本地版本与服务端已部署版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
 ## 制品清单
 
 当项目配置声明了 `service.command`，Nova 会在发布前生成包含 `run` 和 `nova.app.yaml` 的部署包。Nova Agent 仍然只上传 artifact、替换部署目录、执行 `run` 并管理进程生命周期；清单只用于发布前校验和发布后摘要，不描述路由、前端、后端、域名或 TLS。
+
+如果项目要携带一个禁止增加文件的不可变制品，构建命令应先创建外层 Nova 目录，再把该制品完整放进子目录；`service.command` 从外层根目录调用内部 Runtime。不要把不可变制品目录本身配置成 Nova 的 service artifact 根目录，因为 `run` 和 `nova.app.yaml` 属于外层 Nova 协议。例如：
+
+```text
+dist/example/
+└── artifact/     # 外部 Runtime 拥有并验证的不可变制品
+```
+
+对应命令可以是 `framework-runtime ./artifact`；具体命令、环境和内部目录仍由项目与该 Runtime 的公开合同决定。
 
 示例：
 

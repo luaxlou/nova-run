@@ -17,7 +17,11 @@ Resolve the intended repository root, then inspect its existing `nova.yaml`, man
 - the long-running local foreground `start` command, when local lifecycle management is wanted; and
 - the production `service.command`, relative to the artifact root, when the artifact runs as a service.
 
-Keep secrets, tokens, machine-specific addresses, and cloud credentials out of `nova.yaml`. Use a top-level `project` and either one top-level application or an `apps` mapping. Nova treats a configured artifact directory as the packaged root; for a single-file artifact with a service, it stages that file's basename at the packaged root. Write `service.command` for that packaged layout, not for the source-repository path. For example:
+Treat Nova Run and every application framework, compiler, Artifact format, and Runtime as independent systems. Nova executes the repository-owned `build.commands`, packages the configured path, and runs the declared command; it does not infer another product's project model, load its Toolchain Adapter, or require product-specific integration merely because the repository contains that product's manifest. A framework manifest proves application intent, not a Nova build command. If the repository has no repeatable command that produces the required deployable path, report the missing project build entry and ask for that project decision; do not diagnose a Nova compatibility defect or invent an import of another product's private modules.
+
+When repository evidence explicitly identifies an EV protocol 3 project, `ev check`, `ev build [app]`, `ev dev <app>` and `ev start <app> [--prod]` remain EV-owned public commands. The check and build commands are valid Nova `build.commands`, and an explicitly selected EV start command may be used as a Nova lifecycle or service command. Nova still treats every one as an opaque shell command: EV reads Application Descriptions, selects Toolchain and Runtime Adapters, builds Artifacts, and defines development/start behavior; Nova neither repeats nor interprets those steps.
+
+Keep secrets, tokens, machine-specific addresses, and cloud credentials out of `nova.yaml`. Use a top-level `project` and either one top-level application or an `apps` mapping. Nova treats a configured artifact directory as the packaged root; for a single-file artifact with a service, it stages that file's basename at the packaged root. For a service directory Nova adds its own `run` and `nova.app.yaml` files at that root. If a framework's Artifact is an immutable or closed directory, the project build must place it below an outer Nova package directory, and `service.command` must invoke it through that nested path. Never point Nova at the closed inner directory and then mistake Nova's outer packaging files for framework integration. Write `service.command` for the final packaged layout, not for the source-repository path. For example:
 
 ```yaml
 project: example
@@ -31,6 +35,8 @@ artifacts:
 service:
   command: ./example
 ```
+
+For an opaque immutable Runtime Artifact, the equivalent shape can be `dist/example/artifact/` inside the configured outer path `dist/example`, with a command such as `framework-runtime ./artifact`; the exact builder, directory name, Runtime command, and environment still require repository evidence.
 
 For multiple applications, put the same `start`, `build`, `artifacts`, and `service` fields below `apps.<selector>`. The selector already becomes the remote app name; add `app` only when the remote name must differ. `start` must remain in the foreground and must not daemonize. `service.command` is the production entrypoint and need not equal `start`. Do not add database, cache, domain, proxy, TLS, load-balancer, discovery, or cloud-resource configuration to Nova's model.
 

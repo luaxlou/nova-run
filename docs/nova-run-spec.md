@@ -21,6 +21,10 @@ Nova 不管理数据库、缓存、Ingress、反向代理、域名、TLS、负�
 
 ## 项目配置
 
+Nova Run 的项目模型与应用框架、编译器、制品格式和 Runtime 相互独立。`build.commands` 是项目拥有的普通命令；Nova 按顺序执行它们，但不解析外部产品清单、不加载外部 Toolchain Adapter，也不根据源码或文件扩展名猜测构建方式。`artifacts` 指向 Nova 要交付的一个外层文件或目录，目录内容对 Nova 而言是不透明的部署输入。
+
+当项目明确采用 EV protocol 3 时，`ev check`、`ev build [app]`、`ev dev <app>` 与 `ev start <app> [--prod]` 都是 EV 拥有的公开命令。检查和构建命令可以直接成为 `build.commands`，开发或启动命令也可以在项目明确选择时被 Nova 生命周期调用。EV 负责读取 Application Description、调用 Adapter、形成 `dist/` 并定义开发与启动行为；Nova 不重复这些语义，只执行命令、观察进程并封装声明的路径。
+
 单应用：
 
 ```yaml
@@ -104,6 +108,8 @@ nova status [app|all] [-r|--remote]
 ## 制品与远端运行
 
 `service.command` 仍是远端生产进程入口。发布时 Nova 生成 artifact 根目录的 `run` 脚本和 `nova.app.yaml`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
+
+因为这两个文件属于 Nova 外层部署协议，要求内容闭包保持不变的第三方制品不得直接作为 service artifact 根目录。项目构建应形成一个外层目录，把该制品完整放在子目录中，再让 `service.command` 从外层根目录调用它。例如，配置 `artifacts: [dist/example]` 时可以把不透明制品放在 `dist/example/artifact/`，并使用 `framework-runtime ./artifact`。这是两个独立系统通过项目拥有的命令和目录边界协作，不表示 Nova 理解或适配该 framework。
 
 Artifact 清单示例：
 

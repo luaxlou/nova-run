@@ -132,11 +132,22 @@ runtime:
 
 CLI 的 `[app]` 是当前项目 `nova.yaml` 中 `apps` 下的选择器，不是临时远端应用名。本地状态身份也始终使用选择器，不使用可选的远端 `app` 别名。
 
+## Agent Plugin
+
+Nova Run 同一产品版本还可以分发 Agent Plugin。Codex 与 Claude Code 的清单都指向仓库根目录同一份 `skills/`；Plugin 不增加第二套项目模型，也不改变本规范中的 CLI、Agent 或 API 语义。
+
+`nova-run-init` 根据现有项目事实建立或维护 `nova.yaml`，并且只在用户明确要求且已有安全凭据输入时调用 `nova init` 写入本机项目绑定。它不执行构建或部署，不改变本地或远端进程，也不安装 Agent 或配置阿里云资源。
+
+`nova-run-doctor` 默认只读地检查 CLI 版本、项目配置、仓库事实和本地绑定。任何修复都必须先说明精确的本地改动并逐项获得授权；Doctor 不得隐式调用部署、生命周期变更、授权轮换、云控制面或其他外部写操作。远端只读检查也只有在用户要求相应诊断且本地绑定已经存在时才执行。
+
+Plugin 清单、Marketplace、Skill 声明和根 `VERSION` 必须保持同一版本。Release 在发布二进制前运行全量测试和 Plugin 打包校验，并把一个平台无关的 `nova-run-plugin-<version>.tgz` 与各平台 CLI 二进制一起加入校验和。
+
 ## 验证要求
 
 - 配置测试覆盖 start-only、继承、默认选择器、`all` 顺序、身份查询、缺失字段和废弃字段。
 - supervisor 测试覆盖锁、原子状态、readiness、重复 start、进程组清理、强制 KILL、自然退出、日志和批量回滚。
 - CLI 测试覆盖默认本地、显式远端、`--remote` 位置、status 路由和 run/restart 等价。
+- Plugin 测试覆盖清单与 Skill 版本一致性、归档白名单、版本漂移拒绝，以及两项 Skill 的结构校验。
 - 完整测试、race、vet 与 Linux/macOS amd64/arm64 构建必须通过。
 
 ## v0.2.0 迁移

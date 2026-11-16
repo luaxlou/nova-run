@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-11-16
+
+### Added
+- 新增可由 Codex 与 Claude Code 安装的 Nova Run Plugin，并从同一份 `skills/` 分发 `nova-run-init` 与 `nova-run-doctor`。
+- 新增独立、平台无关的 Plugin Release 归档及清单、Skill 和版本一致性验证。
+
+### Changed
+- Release 在上传前运行完整测试，并要求发布 tag、`VERSION`、Plugin 清单与 Skill 版本一致。
+- 项目初始化与诊断边界写入产品 Skill：初始化只建立项目配置与按需本地凭证绑定；Doctor 默认只读，任何本地修复都需逐项明确授权，且不会隐式部署或变更云资源。
+
 ## [0.2.7] - 2026-10-12
 
 ### Added

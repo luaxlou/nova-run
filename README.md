@@ -41,154 +41,48 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.7 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.8 bash
 ```
+
+## 安装 Nova Run Plugin
+
+CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex 或 Claude Code 理解怎样建立 Nova 项目，以及怎样在不部署、不改变进程或云资源的前提下检查问题。两者使用同一个产品版本，Plugin 从仓库根目录的同一份 `skills/` 提供 init 与 doctor 能力。Codex 通过 `$nova-run-init`、`$nova-run-doctor` 调用；Claude Code 使用 `/nova-run:nova-run-init`、`/nova-run:nova-run-doctor`。
+
+Codex：
+
+```bash
+codex plugin marketplace add luaxlou/nova-run --ref main
+codex plugin add nova-run@nova-run
+```
+
+Claude Code：
+
+```bash
+claude plugin marketplace add luaxlou/nova-run
+claude plugin install nova-run@nova-run
+```
+
+正式发布后，可以把 Marketplace 固定到对应的 `vX.Y.Z` tag；更新 Plugin 后请重新打开会话，让宿主加载新版本。Plugin 安装不会替代上面的 CLI 安装，也不会自动安装服务器 Agent 或配置阿里云。完整的分发结构和安全边界见 [Agent Plugin 说明](docs/agent-plugin.md)。
 
 ## 初始化项目
 
-请先在目标 Linux 服务器上安装 Nova Agent，然后执行 `sudo nova auth set <project>` 为当前项目创建授权。项目名称来自 `nova.yaml` 顶层的 `project` 字段；重复执行会覆盖原授权并使旧 token 失效。
+在 Codex 中使用 `$nova-run-init`，或在 Claude Code 中使用 `/nova-run:nova-run-init`。它会先根据项目实际的构建入口、制品和运行方式建立或维护 `nova.yaml`。只有你明确要求且已有安全凭据输入时，它才继续写入本机项目绑定；它不会部署、修改进程、安装远端 Agent，或创建和调整阿里云资源。
 
-进入项目目录后执行：
-
-```bash
-nova
-```
-
-也可以显式执行：
+如果不使用 Plugin，也可以按 [项目部署配置](#项目部署配置)手工编写 `nova.yaml`。现有 `nova init` 命令不会创建这份文件；它只在配置有效后，把已有 Nova Agent 的 Endpoint 和项目 token 绑定到当前项目：
 
 ```bash
 nova init
 ```
 
-这一步只初始化当前项目。首次执行时，Nova 会进入交互式初始化，要求填写 Nova Agent Endpoint 和项目 token。凭证保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不会写入仓库。
+凭证保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不会写入仓库。项目名称来自 `nova.yaml` 顶层的 `project`；目标服务器上的项目授权仍由现有 `sudo nova auth set <project>` 管理，重复执行会覆盖旧授权。
 
-Nova Agent Endpoint 指安装了 Nova Agent 的那台机器的访问地址，例如 `http://你的服务器IP:32102`。
+初始化完成后可以只读确认绑定：
 
-初始化不会安装 Nova 客户端；如果本机还没有 `nova` 命令，请先完成上面的安装步骤。
+```bash
+nova target list
+```
 
-## 给 AI 的提示词
-
-当项目开发、构建和发布主要交给 AI 处理时，可以按任务阶段选择下面两类提示词。
-
-### 安装和配置 Nova Run
-
-当目标是让 AI 帮你安装 Nova Run 客户端、安装服务器 Agent，并完成首次连接配置时，使用这段：
-
-````text
-你正在协助我安装和配置 Nova Run。
-
-Nova Run 项目地址：
-- GitHub: https://github.com/luaxlou/nova-run
-- 客户端安装脚本: https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh
-- 服务器 Agent 安装脚本: https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh
-
-请按下面流程直接执行，除非缺少服务器登录信息或需要我确认安全组/防火墙变更。
-
-请完成这些工作：
-1. 在本机安装或更新 `nova` 客户端：
-   `curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | bash`
-2. 确认本机 `nova` 可用：
-   `command -v nova && nova --help`
-3. 在目标 Linux 服务器上安装 Nova Agent。如果我提供了服务器地址 `<server>`，优先使用 SSH 执行：
-   `ssh root@<server> 'curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo env NOVA_AGENT_ENDPOINT=http://<server>:32102 bash'`
-   如果不能 SSH 到 root，请使用我提供的用户或让我提供登录方式。
-4. 确认服务器 Agent 运行：
-   `ssh root@<server> 'systemctl is-active nova.service && systemctl is-enabled nova.service && ss -ltnp | grep 32102'`
-5. 确认本机可以访问 Agent：
-   `curl -fsS --max-time 10 http://<server>:32102/health`
-6. 如果公网访问超时，请协助开放安全组或防火墙入方向 `TCP 32102`。开放前说明来源范围；默认优先只开放我的公网 IP，必要时再临时开放 `0.0.0.0/0`。
-7. 按 `nova.yaml` 中的项目名称创建或覆盖项目授权：
-   `ssh root@<server> 'sudo nova auth set <project>'`
-8. 在本机项目目录执行：
-   `nova init`
-   Endpoint 填 `http://<server>:32102`，Token 填上一步生成的值。
-9. 用下面命令验证：
-   `nova target list`
-
-请遵守这些边界：
-- Nova Agent 只安装在 Linux 服务器上。
-- 不要把访问令牌、SSH 密钥或云厂商凭据写入仓库。
-- 不要把 token 打印进最终回复；只说明 token 已配置。
-- 安装完成后，请说明客户端安装位置、Agent 服务状态、Endpoint、配置文件位置和验证结果。
-````
-
-### 在项目中引入 Nova Run
-
-当 Nova Run 已经安装并且本机客户端已经配置完毕，只需要让 AI 在项目中使用 Nova Run 接管发布、运行、日志和生命周期时，使用这段：
-
-````text
-你正在协助维护一个已经配置好 Nova Run 的项目。
-
-请假定本机 `nova` 客户端已经安装，且当前项目已经通过 `nova init` 绑定到目标 Nova Agent。
-
-Nova Run 项目地址：
-- GitHub: https://github.com/luaxlou/nova-run
-
-请把 Nova Run 当作这个项目的运行生命周期入口：
-1. 本地生命周期和状态使用 `nova start|stop|restart|run|status`，不需要连接 Nova Agent；`run` 与 `restart` 等价。发布前运行 `nova target list` 确认目标配置；完成 `nova.yaml` 后运行 `nova status -r` 验证 Agent 连接和远端应用状态。
-2. 识别项目的构建命令、运行入口和要发布的制品路径。
-3. 如果项目根目录还没有 `nova.yaml`，请创建它；如果已经存在，请按项目实际构建方式更新它。
-4. 单应用项目优先使用这个结构：
-   ```yaml
-   project: <project-name>
-   app: <app-name>
-   start: <long-running-foreground-command>
-   build:
-     commands:
-       - <build-command>
-   artifacts:
-     - <artifact-path>
-   service:
-     command: <start-command>
-   ```
-5. 多子应用项目使用这个结构：
-   ```yaml
-   project: <project-name>
-   apps:
-     <app-name>:
-       start: <long-running-foreground-command>
-       build:
-         commands:
-           - <build-command>
-       artifacts:
-         - <artifact-path>
-       service:
-         command: <start-command>
-   ```
-   `apps` 下面的 key 默认就是应用名。只有需要给本地选择器起别名时，才额外写 `app: <remote-app-name>`。
-6. 如果 `<artifact-path>` 还不存在，请补齐最小必要的构建命令，让构建结果稳定输出到该路径。
-7. `start` 是本地持续运行的前台命令，不能自行后台化。Nova 为每个应用创建按需 supervisor，`stop` 由 supervisor 终止完整进程组；`restart` 与 `run` 都先停止全部目标，再启动全部目标。`service.command` 是服务器生产运行命令，与本地命令互不复用。
-8. 完成代码修改并提交 Git 后，执行：
-   `nova deploy`
-   不指定目标时，Nova 默认部署 `apps` 下的全部应用。只部署单个应用时显式执行：
-   `nova deploy <app-selector>`
-   也可以显式写出：
-   `nova deploy all`
-   Nova 会拒绝未提交的本地工作区，把当前 Git HEAD 短 SHA 作为部署版本提交给 Agent；如果目标应用已经是同一版本，命令会直接返回 `already latest`，不再构建和上传制品。
-9. 发布后执行：
-   `nova status -r`
-   或：
-   `nova status <app-selector> -r`
-   或：
-   `nova status all -r`
-10. 需要看日志时执行：
-   `nova logs`
-   或：
-   `nova logs <app-selector> -f`
-11. 需要控制进程时执行：
-   本地：`nova start|stop|restart|run|status [app-selector|all]`
-   远端：`nova start|stop|restart|run|status [app-selector|all] -r|--remote`
-
-上述 deploy、生命周期、status 和 logs 命令在省略选择器时都默认操作全部应用。只有显式指定 `<app-selector>` 时才操作单个应用；跟随日志必须写成 `nova logs <app-selector> -f`。
-
-请遵守这些边界：
-- Nova Run 只负责单机部署、进程生命周期和日志查看。
-- Nova Run 不管理数据库、缓存、域名、Nginx、Ingress、负载均衡或服务发现。
-- 不要把 Nova 访问令牌、服务器私密配置或临时密钥写入仓库。
-- 如果发布失败，按顺序检查：本地构建产物、`nova` 目标配置、Agent 连通性、服务器 systemd 状态和 journald 日志。
-
-执行任务时，请主动完成：代码修改、`nova.yaml` 配置、测试、构建、发布、状态检查和日志排查，并在最后说明使用过的 Nova 命令和结果。
-````
+要检查已有项目时，在 Codex 使用 `$nova-run-doctor`，或在 Claude Code 使用 `/nova-run:nova-run-doctor`。Doctor 默认只读地核对 CLI 版本、`nova.yaml`、仓库事实和本地目标绑定；它会先解释具体问题与最小修复，只有得到对该项修改的明确授权后才改动本地文件。Doctor 不会把一次检查解释成部署、生命周期变更、凭据轮换或云资源操作的授权。
 
 ## 本地生命周期
 

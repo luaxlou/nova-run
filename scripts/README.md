@@ -1,5 +1,15 @@
 # Scripts
 
+## package-plugin.sh
+
+校验 `VERSION`、Codex/Claude Plugin 清单、Claude Marketplace 与两项产品 Skill 的版本一致性，然后生成平台无关的 `dist/nova-run-plugin-<version>.tgz`：
+
+```bash
+bash scripts/package-plugin.sh
+```
+
+归档只包含 Plugin 清单、Marketplace 入口、根 `skills/` 和 `docs/agent-plugin.md`，并规范化顺序、时间、所有者和权限，使相同内容得到相同制品。可以用 `NOVA_PLUGIN_OUTPUT_DIR` 指定输出目录；脚本不会安装 Plugin，也不会修改用户的 Codex、Claude Code 或 Nova 配置。
+
 ## install-cli.ps1
 
 在 Windows PowerShell 中安装 Nova 客户端，并校验 Release 的 SHA256：

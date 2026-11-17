@@ -2,7 +2,7 @@
 name: doctor
 description: Diagnose a Nova Run project's local configuration, CLI compatibility, credential binding, and read-only status, then apply narrowly scoped local repairs only with explicit authorization. Do not use it to deploy, change process state, mutate cloud resources, or perform implicit external writes.
 metadata:
-  novaRunRelease: "0.2.12"
+  novaRunRelease: "0.2.13"
 ---
 
 # Nova Run Doctor
@@ -27,11 +27,11 @@ Check the facts in their natural dependency order:
 - each configured `service.command` is valid relative to the declared Artifact root and contains no repository secret; remember that a directory service artifact is preserved below Nova's outer deployment wrapper and used as the command working directory, while a single-file service artifact is staged at the wrapper root under its basename;
 - any immutable or closed directory Artifact is selected directly, so Nova's generic outer deployment wrapper can preserve its contents and use it as the service working directory;
 - referenced paths and scripts agree with the repository, distinguishing an expected not-yet-built output from a broken path; and
-- the current project has a readable local target binding without exposing its token.
+- the machine has one readable global Nova target without exposing its token; do not diagnose a missing project-specific binding when another project already uses that target.
 
-Use only commands that preserve the diagnosed project and external systems. `nova target list` checks the local project binding without revealing its token. Do not run `nova status` as a default configuration check because it creates local supervisor cache files. If runtime status is part of the requested scope, explain that local side effect before running it. `nova status --remote` may also trigger credential setup when no binding exists, so use it only after `nova target list` succeeds and the person has requested a network connectivity check. Never print credential-file contents or tokens.
+Use only commands that preserve the diagnosed project and external systems. `nova target list` checks the machine-wide Nova target without revealing its token. The default target lives at `~/.nova/client.env` and is shared by all projects; `NOVA_CLIENT_ENV` may explicitly select another global target file. Do not run `nova status` as a default configuration check because it creates local supervisor cache files. If runtime status is part of the requested scope, explain that local side effect before running it. `nova status --remote` may also trigger credential setup when no target exists, so use it only after `nova target list` succeeds and the person has requested a network connectivity check. Never print credential-file contents or tokens.
 
-Do not run `nova init`, `nova deploy`, `nova auth set`, installers, build commands, or `nova start`, `stop`, `restart`, or `run` during the read-only phase. Do not edit files, change permissions, rotate credentials, contact cloud control planes, or alter Aliyun, Agent, systemd, firewall, DNS, proxy, database, or cache state.
+Do not run `nova init`, `nova deploy`, installers, build commands, or `nova start`, `stop`, `restart`, or `run` during the read-only phase. Do not edit files, change permissions, rotate credentials, contact cloud control planes, or alter Aliyun, Agent, systemd, firewall, DNS, proxy, database, or cache state.
 
 Explain the result as a coherent account of what is working, what concrete fact is inconsistent, its consequence, and the smallest safe local repair. Do not turn internal checks into a wall of labels. Before any repair, name the exact local file, field, or permission that would change and obtain explicit authorization for that repair. A general request to “run doctor” is not repair authorization.
 

@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/luaxlou/glow-ops/internal/artifact"
-	"github.com/luaxlou/glow-ops/internal/authz"
 	"github.com/luaxlou/glow-ops/internal/deploy"
 	"github.com/luaxlou/glow-ops/internal/runtime"
 	"github.com/luaxlou/glow-ops/pkg/api"
@@ -21,17 +20,17 @@ import (
 
 type Server struct {
 	AppRoot        string
-	AuthStore      *authz.Store
+	Token          *string
 	restartService func(string) error
 }
 
-func NewProjectServer(appRoot, authDir string) *Server {
+func NewServer(appRoot, token string) *Server {
 	cleanRoot := filepath.Clean(appRoot)
 	if err := runtime.EnsureAppServiceTemplate(cleanRoot); err != nil {
 		log.Printf("nova app service template setup failed: %v", err)
 	}
-	store := &authz.Store{Dir: filepath.Clean(authDir)}
-	return &Server{AppRoot: cleanRoot, AuthStore: store}
+	cleanToken := strings.TrimSpace(token)
+	return &Server{AppRoot: cleanRoot, Token: &cleanToken}
 }
 
 func (s *Server) restart(name string) error {
@@ -45,55 +44,20 @@ func (s *Server) restart(name string) error {
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", s.handleHealth)
-
-	if s.AuthStore != nil {
-		mux.HandleFunc("/v2/projects/", s.handleProjectAPI)
+	if s.Token != nil {
+		protected := func(next http.HandlerFunc) http.HandlerFunc { return RequireToken(*s.Token)(next) }
+		mux.HandleFunc("/v1/apps", protected(s.handleListApps))
+		mux.HandleFunc("/v1/apps/", protected(s.handleApps))
 	}
+
 	return mux
 }
 
-func (s *Server) handleProjectAPI(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v2/projects/"), "/")
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 || parts[0] == "" || parts[1] != "apps" {
-		api.RenderJSONError(w, http.StatusNotFound, "unknown endpoint")
+func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
 		return
 	}
-	project := parts[0]
-	if err := authz.ValidateProjectName(project); err != nil {
-		api.RenderJSONError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if token := ParseBearerToken(r); token == "" || !s.AuthStore.Verify(project, token) {
-		api.RenderJSONError(w, http.StatusUnauthorized, "invalid token")
-		return
-	}
-	if len(parts) == 2 {
-		if r.Method != http.MethodGet {
-			api.RenderJSONError(w, http.StatusMethodNotAllowed, "unsupported method")
-			return
-		}
-		s.handleProjectListApps(w, project)
-		return
-	}
-	if len(parts) > 4 {
-		api.RenderJSONError(w, http.StatusNotFound, "unknown endpoint")
-		return
-	}
-	app := parts[2]
-	if err := deploy.ValidateAppName(app); err != nil || strings.Contains(app, "--") {
-		api.RenderJSONError(w, http.StatusBadRequest, "invalid app name")
-		return
-	}
-	sub := ""
-	if len(parts) == 4 {
-		sub = parts[3]
-	}
-	s.handleScopedApp(w, r, project+"--"+app, app, sub)
-}
-
-func (s *Server) handleProjectListApps(w http.ResponseWriter, project string) {
-	prefix := project + "--"
 	names := []string{}
 	items, err := os.ReadDir(s.AppRoot)
 	if os.IsNotExist(err) {
@@ -105,12 +69,35 @@ func (s *Server) handleProjectListApps(w http.ResponseWriter, project string) {
 		return
 	}
 	for _, item := range items {
-		if item.IsDir() && strings.HasPrefix(item.Name(), prefix) {
-			names = append(names, strings.TrimPrefix(item.Name(), prefix))
+		if item.IsDir() {
+			names = append(names, item.Name())
 		}
 	}
 	sort.Strings(names)
 	api.RenderJSON(w, api.Response{Success: true, Data: names})
+}
+
+func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/v1/apps/"), "/")
+	parts := strings.Split(path, "/")
+	if len(parts) < 1 || parts[0] == "" {
+		api.RenderJSONError(w, http.StatusBadRequest, "app name required")
+		return
+	}
+	name := parts[0]
+	if err := deploy.ValidateAppName(name); err != nil {
+		api.RenderJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(parts) > 2 {
+		api.RenderJSONError(w, http.StatusNotFound, "unknown endpoint")
+		return
+	}
+	sub := ""
+	if len(parts) == 2 {
+		sub = parts[1]
+	}
+	s.handleScopedApp(w, r, name, name, sub)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

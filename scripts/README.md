@@ -38,7 +38,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 
 ## install-agent.sh
 
-在 Linux 服务器上安装 Nova Agent。安装完成后，先执行 `sudo nova auth set <project>` 创建或覆盖单个项目授权，再把输出的项目 token 交给该项目中的 `nova init`。
+在 Linux 服务器上安装 Nova Agent。安装器在 `/etc/nova/token` 建立或保留一个机器级访问令牌；本机 Nova CLI 只需配置一次 Endpoint 和该令牌，之后所有项目复用同一个目标。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-agent.sh | sudo bash

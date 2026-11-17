@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -22,13 +23,11 @@ import (
 
 	"github.com/luaxlou/glow-ops/internal/agent"
 	"github.com/luaxlou/glow-ops/internal/artifact"
-	"github.com/luaxlou/glow-ops/internal/authz"
 	"github.com/luaxlou/glow-ops/internal/client"
 	"github.com/luaxlou/glow-ops/internal/localsupervisor"
 	"github.com/luaxlou/glow-ops/internal/project"
 	novaruntime "github.com/luaxlou/glow-ops/internal/runtime"
 	"github.com/luaxlou/glow-ops/internal/statusview"
-	"gopkg.in/yaml.v3"
 )
 
 var version = "dev"
@@ -41,8 +40,7 @@ Usage:
   nova init           # 初始化本机 CLI 要连接的发布目标
   nova version | -v | --version   # 输出当前 Nova CLI 版本
   nova -h | --help                # 输出帮助
-  nova agent --listen :32102 --app-root /var/lib/nova/apps --auth-dir /etc/nova/auth/projects
-  nova auth set <project> [--auth-dir /etc/nova/auth/projects]
+  nova agent --listen :32102 --app-root /var/lib/nova/apps --token-file /etc/nova/token
   nova run [app|all] [-r|--remote]   # 默认在本地执行 stop + start；远程操作 Nova Agent
   nova deploy [app|all]   # 读取当前目录 nova.yaml，执行构建并发布；省略 app 时默认全部
   nova start [app|all] [-r|--remote]
@@ -85,9 +83,7 @@ func main() {
 				var targets []project.Target
 				targets, err = loadTargetsFromArgs(optionalArg(parsed.Selector))
 				if err == nil {
-					remoteClient := client.NewClient()
-					remoteClient.Project = targets[0].Project
-					err = runConfiguredRemoteLifecycle(context.Background(), remoteClient, action, targets, os.Stdout)
+					err = runConfiguredRemoteLifecycle(context.Background(), client.NewClient(), action, targets, os.Stdout)
 				}
 			}
 		} else if err == nil {
@@ -140,11 +136,6 @@ func main() {
 			fmt.Printf("agent failed: %v\n", err)
 			os.Exit(1)
 		}
-	case "auth":
-		if err := runAuth(rest); err != nil {
-			fmt.Printf("auth failed: %v\n", err)
-			os.Exit(1)
-		}
 	case "deploy":
 		if err := runConfiguredDeploy(ctx, cli, rest); err != nil {
 			fmt.Printf("deploy failed: %v\n", err)
@@ -161,13 +152,11 @@ func main() {
 			os.Exit(1)
 		}
 		if follow {
-			cli.Project = targets[0].Project
 			if err := cli.LogsStream(ctx, targets[0].App, os.Stdout); err != nil {
 				fmt.Printf("logs failed: %v\n", err)
 				os.Exit(1)
 			}
 		} else {
-			cli.Project = targets[0].Project
 			for _, target := range targets {
 				if len(targets) > 1 {
 					fmt.Printf("==> %s <==\n", target.App)
@@ -230,7 +219,6 @@ func runConfiguredDeploy(ctx context.Context, cli *client.Client, args []string)
 	if err != nil {
 		return err
 	}
-	cli.Project = targets[0].Project
 	for _, target := range targets {
 		if err := deployTarget(ctx, cli, target); err != nil {
 			return err
@@ -255,7 +243,7 @@ func isLifecycleCommand(action string) bool {
 
 func isTopLevelCommand(command string) bool {
 	switch command {
-	case "init", "agent", "auth", "deploy", "logs", "rollback", "target":
+	case "init", "agent", "deploy", "logs", "rollback", "target":
 		return true
 	default:
 		return false
@@ -677,9 +665,6 @@ func loadTargetsFromArgs(args []string) ([]project.Target, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := project.ValidateRemoteProject(cfg); err != nil {
-		return nil, err
-	}
 	fmt.Printf("project config: %s\n", path)
 	if selector == "all" {
 		targets, err := project.ResolveAll(cfg)
@@ -787,7 +772,7 @@ func runAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	listen := fs.String("listen", ":32102", "Nova listen address")
 	appRoot := fs.String("app-root", "/var/lib/nova/apps", "Artifact storage root")
-	authDir := fs.String("auth-dir", "/etc/nova/auth/projects", "Project authorization directory")
+	tokenFile := fs.String("token-file", "/etc/nova/token", "Token file")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("invalid arguments: %w", err)
@@ -800,7 +785,11 @@ func runAgent(args []string) error {
 		return err
 	}
 
-	mux := agent.NewProjectServer(*appRoot, *authDir).Handler()
+	token, err := readTokenFile(*tokenFile)
+	if err != nil {
+		return err
+	}
+	mux := agent.NewServer(*appRoot, token).Handler()
 	srv := &http.Server{
 		Addr:    *listen,
 		Handler: mux,
@@ -809,29 +798,20 @@ func runAgent(args []string) error {
 	return srv.ListenAndServe()
 }
 
-func runAuth(args []string) error {
-	if len(args) < 2 || args[0] != "set" {
-		return fmt.Errorf("usage: nova auth set <project> [--auth-dir <path>]")
-	}
-	projectName := strings.TrimSpace(args[1])
-	fs := flag.NewFlagSet("auth set", flag.ContinueOnError)
-	authDir := fs.String("auth-dir", "/etc/nova/auth/projects", "Project authorization directory")
-	if err := fs.Parse(args[2:]); err != nil {
-		return fmt.Errorf("invalid arguments: %w", err)
-	}
-	if len(fs.Args()) != 0 {
-		return fmt.Errorf("unexpected auth arguments: %s", strings.Join(fs.Args(), " "))
-	}
-	token, err := (authz.Store{Dir: *authDir}).Set(projectName)
+func readTokenFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return "", fmt.Errorf("read Nova Agent token: %w", err)
 	}
-	fmt.Printf("Project: %s\nProject token: %s\n", projectName, token)
-	return nil
+	token := strings.TrimSpace(string(content))
+	if token == "" {
+		return "", fmt.Errorf("Nova Agent token file is empty: %s", path)
+	}
+	return token, nil
 }
 
 func autoBootstrapRuntimeConfig(cmd string) error {
-	if cmd == "agent" || cmd == "auth" || cmd == "init" || cmd == "target" || isLifecycleCommand(cmd) {
+	if cmd == "agent" || cmd == "init" || cmd == "target" || isLifecycleCommand(cmd) {
 		return nil
 	}
 	if runtimeConfigReady() {
@@ -847,7 +827,7 @@ func autoBootstrapRuntimeConfig(cmd string) error {
 }
 
 func runTargetAdd(args []string) error {
-	name := ""
+	name := "default"
 	var endpoint, token string
 	for i := 0; i < len(args); i++ {
 		arg := strings.TrimSpace(args[i])
@@ -871,12 +851,8 @@ func runTargetAdd(args []string) error {
 			name = arg
 		}
 	}
-	projectName, err := currentRemoteProject()
-	if err != nil {
-		return err
-	}
-	if name != "" && name != projectName {
-		return fmt.Errorf("target name %q must match current project %q", name, projectName)
+	if name == "" {
+		return fmt.Errorf("target name required")
 	}
 	if endpoint == "" {
 		return fmt.Errorf("--url is required")
@@ -885,53 +861,47 @@ func runTargetAdd(args []string) error {
 		return fmt.Errorf("--token is required")
 	}
 
-	configPath, err := projectCredentialPath(projectName)
+	home, err := os.UserHomeDir()
 	if err != nil {
+		return fmt.Errorf("读取用户目录失败: %w", err)
+	}
+	configPath := runtimeConfigPath(home)
+	if err := writeConfig(configPath, endpoint, token); err != nil {
 		return err
 	}
-	if err := writeProjectCredential(configPath, endpoint, token); err != nil {
-		return err
-	}
-	info(fmt.Sprintf("project %q 已写入 %s", projectName, configPath))
+	info(fmt.Sprintf("target %q 已写入 %s", name, configPath))
 	return nil
 }
 
 func runTargetList() error {
-	projectName, err := currentRemoteProject()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("读取用户目录失败: %w", err)
 	}
-	configPath, err := projectCredentialPath(projectName)
-	if err != nil {
-		return err
-	}
-	endpoint, _, err := readProjectCredential(configPath)
+	configPath := runtimeConfigPath(home)
+	endpoint, _, err := readRuntimeConfigFromFile(configPath)
 	if err != nil {
 		return fmt.Errorf("读取目标配置失败: %w", err)
 	}
 	if strings.TrimSpace(endpoint) == "" {
 		return fmt.Errorf("目标配置缺少 Nova Agent Endpoint")
 	}
-	fmt.Printf("* %s %s\n", projectName, endpoint)
+	fmt.Printf("* default %s\n", endpoint)
 	return nil
 }
 
 func runtimeConfigReady() bool {
 	endpoint := strings.TrimSpace(firstEnv("NOVA_ENDPOINT", "NOVA_AGENT_ENDPOINT"))
 	token := strings.TrimSpace(firstEnv("NOVA_TOKEN", "NOVA_AGENT_TOKEN"))
-	if endpoint != "" || token != "" {
-		return endpoint != "" && token != ""
+	if endpoint != "" && token != "" {
+		return true
 	}
 
-	projectName, err := currentRemoteProject()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return false
 	}
-	configPath, err := projectCredentialPath(projectName)
-	if err != nil {
-		return false
-	}
-	endpointInFile, tokenInFile, err := readProjectCredential(configPath)
+	endpointInFile, tokenInFile, err := readRuntimeConfigFromFile(runtimeConfigPath(home))
 	if err != nil {
 		return false
 	}
@@ -954,14 +924,11 @@ func runtimeConfigReady() bool {
 }
 
 func bootstrapRuntimeConfig() error {
-	projectName, err := currentRemoteProject()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("读取用户目录失败: %w", err)
 	}
-	configPath, err := projectCredentialPath(projectName)
-	if err != nil {
-		return err
-	}
+	configPath := runtimeConfigPath(home)
 
 	endpoint := strings.TrimSpace(firstEnv("NOVA_ENDPOINT", "NOVA_AGENT_ENDPOINT"))
 	if endpoint == "" {
@@ -988,7 +955,17 @@ func bootstrapRuntimeConfig() error {
 		return fmt.Errorf("访问令牌不能为空")
 	}
 
-	if err := writeProjectCredential(configPath, endpoint, token); err != nil {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if _, isSet := firstEnvWithSource("NOVA_CLIENT_ENV"); !isSet {
+			value, err := promptInput(fmt.Sprintf("配置文件路径 [%s]: ", configPath), configPath)
+			if err != nil {
+				return err
+			}
+			configPath = value
+		}
+	}
+
+	if err := writeConfig(configPath, endpoint, token); err != nil {
 		return err
 	}
 	info(fmt.Sprintf("配置已写入 %s", configPath))
@@ -998,53 +975,72 @@ func bootstrapRuntimeConfig() error {
 	_ = os.Setenv("NOVA_AGENT_ENDPOINT", endpoint)
 	_ = os.Setenv("NOVA_AGENT_TOKEN", token)
 
+	shellRC := detectShellRC(home)
+	if shellRC != "" && hasTTY() {
+		answer, err := promptInput(fmt.Sprintf("是否将配置自动加入 %s（y/N）? ", shellRC), "n")
+		if err != nil {
+			return err
+		}
+		if isYes(answer) {
+			if err := appendSource(shellRC, configPath); err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
-type projectCredential struct {
-	Endpoint string `yaml:"endpoint"`
-	Token    string `yaml:"token"`
-}
-
-func currentRemoteProject() (string, error) {
-	cfg, _, err := project.Load(".")
-	if err != nil {
-		return "", err
-	}
-	if err := project.ValidateRemoteProject(cfg); err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(cfg.Project), nil
-}
-
-func projectCredentialPath(projectName string) (string, error) {
+func runtimeConfigPath(home string) string {
 	if override := strings.TrimSpace(os.Getenv("NOVA_CLIENT_ENV")); override != "" {
-		return override, nil
+		return override
 	}
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("读取用户配置目录失败: %w", err)
-	}
-	return filepath.Join(base, "nova", "projects", projectName+".yaml"), nil
+	return filepath.Join(home, ".nova", "client.env")
 }
 
-func readProjectCredential(path string) (string, string, error) {
-	data, err := os.ReadFile(path)
+func readRuntimeConfigFromFile(path string) (string, string, error) {
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return "", "", err
 	}
-	var credential projectCredential
-	if err := yaml.Unmarshal(data, &credential); err != nil {
-		return "", "", err
-	}
-	return strings.TrimSpace(credential.Endpoint), strings.TrimSpace(credential.Token), nil
+	return parseRuntimeConfig(string(content))
 }
 
-func writeProjectCredential(path, endpoint, token string) error {
-	data, err := yaml.Marshal(projectCredential{Endpoint: strings.TrimSpace(endpoint), Token: strings.TrimSpace(token)})
-	if err != nil {
-		return err
+func parseRuntimeConfig(content string) (string, string, error) {
+	var endpoint, token string
+	scan := bufio.NewScanner(bytes.NewBufferString(content))
+	for scan.Scan() {
+		line := strings.TrimSpace(scan.Text())
+		if line == "" || strings.HasPrefix(line, "#") || !strings.HasPrefix(line, "export ") {
+			continue
+		}
+		parts := strings.SplitN(strings.TrimSpace(strings.TrimPrefix(line, "export ")), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key, value := strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+		if len(value) >= 2 && ((value[0] == '"' && value[len(value)-1] == '"') || (value[0] == '\'' && value[len(value)-1] == '\'')) {
+			value = value[1 : len(value)-1]
+		}
+		switch key {
+		case "NOVA_ENDPOINT", "NOVA_AGENT_ENDPOINT":
+			if endpoint == "" {
+				endpoint = value
+			}
+		case "NOVA_TOKEN", "NOVA_AGENT_TOKEN":
+			if token == "" {
+				token = value
+			}
+		}
 	}
+	if err := scan.Err(); err != nil {
+		return "", "", err
+	}
+	return endpoint, token, nil
+}
+
+func writeConfig(path, endpoint, token string) error {
+	data := []byte(fmt.Sprintf("export NOVA_ENDPOINT=%q\nexport NOVA_TOKEN=%q\nexport NOVA_AGENT_ENDPOINT=%q\nexport NOVA_AGENT_TOKEN=%q\n", endpoint, token, endpoint, token))
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -1073,6 +1069,25 @@ func writeProjectCredential(path, endpoint, token string) error {
 		return err
 	}
 	return os.Rename(tmpPath, path)
+}
+
+func appendSource(shellRC, configPath string) error {
+	line := fmt.Sprintf("source \"%s\"", configPath)
+	content, err := os.ReadFile(shellRC)
+	if err == nil && strings.Contains(string(content), line) {
+		info(fmt.Sprintf("已检测到配置文件已在 %s 中。", shellRC))
+		return nil
+	}
+	f, err := os.OpenFile(shellRC, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return fmt.Errorf("打开 shell 配置文件失败: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString("\n# Nova runtime env\n" + line + "\n"); err != nil {
+		return fmt.Errorf("写入 shell 配置失败: %w", err)
+	}
+	info(fmt.Sprintf("已写入：%s 到 %s", line, shellRC))
+	return nil
 }
 
 type githubAsset struct {

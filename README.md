@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 需要固定版本时，传入 `NOVA_VERSION`：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.12 bash
+curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/install-cli.sh | NOVA_VERSION=v0.2.13 bash
 ```
 
 ## 安装 Nova Run Plugin
@@ -51,14 +51,14 @@ CLI 执行确定性的配置、构建和生命周期命令；Plugin 则让 Codex
 Codex 可以像 EV 一样从 `digitagent` 的 Gitee Marketplace 安装：
 
 ```bash
-codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.12
+codex plugin marketplace add git@gitee.com:digitagent/nova-run.git --ref v0.2.13
 codex plugin add nova@nova
 ```
 
 GitHub 镜像保留同一版本；无法使用 Gitee SSH 时，可以改用：
 
 ```bash
-codex plugin marketplace add luaxlou/nova-run --ref v0.2.12
+codex plugin marketplace add luaxlou/nova-run --ref v0.2.13
 codex plugin add nova@nova
 ```
 
@@ -73,15 +73,15 @@ claude plugin install nova@nova
 
 ## 初始化项目
 
-在 Codex 中使用 `$nova:init`，或在 Claude Code 中使用 `/nova:init`。它会先根据项目实际的构建入口、制品和运行方式建立或维护 `nova.yaml`。只有你明确要求且已有安全凭据输入时，它才继续写入本机项目绑定；它不会部署、修改进程、安装远端 Agent，或创建和调整阿里云资源。
+在 Codex 中使用 `$nova:init`，或在 Claude Code 中使用 `/nova:init`。它会先根据项目实际的构建入口、制品和运行方式建立或维护 `nova.yaml`。只有你明确要求且已有安全凭据输入时，它才继续建立本机全局目标；它不会部署、修改进程、安装远端 Agent，或创建和调整阿里云资源。
 
-如果不使用 Plugin，也可以按 [项目部署配置](#项目部署配置)手工编写 `nova.yaml`。现有 `nova init` 命令不会创建这份文件；它只在配置有效后，把已有 Nova Agent 的 Endpoint 和项目 token 绑定到当前项目：
+如果不使用 Plugin，也可以按 [项目部署配置](#项目部署配置)手工编写 `nova.yaml`。现有 `nova init` 命令不会创建这份文件；它只配置本机 Nova CLI 共用的 Agent Endpoint 和访问令牌：
 
 ```bash
 nova init
 ```
 
-凭证保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不会写入仓库。项目名称来自 `nova.yaml` 顶层的 `project`；目标服务器上的项目授权仍由现有 `sudo nova auth set <project>` 管理，重复执行会覆盖旧授权。
+凭证默认保存在 `~/.nova/client.env`，不会写入仓库。它属于本机 Nova 安装而不是某个项目；配置一次后，不同项目直接复用同一个 Agent Endpoint 和访问令牌。`nova.yaml` 只描述项目自己的应用、构建、制品与生命周期，不保存连接凭据。
 
 初始化完成后可以只读确认绑定：
 
@@ -276,11 +276,9 @@ curl -fsSL https://raw.githubusercontent.com/luaxlou/nova-run/main/scripts/insta
 安装完成后会看到类似输出：
 
 ```text
-Nova Agent initialized. Create or replace one project's authorization with:
-  sudo nova auth set <project>
-Then use these values when running 'nova init' in that project:
+Nova Agent initialized. Use these values when running 'nova init' on a project machine:
 Nova Agent Endpoint: http://<this-server-ip-or-domain>:32102
-Project token: output of 'sudo nova auth set <project>'
+Access token: sudo cat /etc/nova/token
 ```
 
 如果已经有明确的域名或公网地址，可以安装时传入 `NOVA_AGENT_ENDPOINT`，让脚本输出可直接复制的 Endpoint：

@@ -46,24 +46,6 @@ func TestValidateRequiresAppAndArtifacts(t *testing.T) {
 	}
 }
 
-func TestValidateRemoteProjectUsesProjectName(t *testing.T) {
-	base := Config{Project: "billing", App: "api", Artifacts: []string{"dist"}}
-	if err := ValidateRemoteProject(base); err != nil {
-		t.Fatal(err)
-	}
-	for _, value := range []string{"", "Billing", "billing--api", "../billing"} {
-		cfg := base
-		cfg.Project = value
-		if err := ValidateRemoteProject(cfg); err == nil {
-			t.Fatalf("project %q unexpectedly accepted", value)
-		}
-	}
-	base.App = "other--api"
-	if err := ValidateRemoteProject(base); err == nil {
-		t.Fatal("reserved remote app delimiter unexpectedly accepted")
-	}
-}
-
 func TestValidateAllowsStaticArtifactWithoutService(t *testing.T) {
 	err := Validate(Config{App: "docs", Artifacts: []string{"dist/docs"}})
 	if err != nil {

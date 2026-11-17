@@ -2,7 +2,7 @@
 name: init
 description: Establish or maintain a repository's Nova Run project and deployment configuration, then optionally bind existing local Agent credentials. Use when onboarding a project or changing its Nova-managed build, artifact, or lifecycle declaration; do not use to deploy, provision infrastructure, or configure cloud services.
 metadata:
-  novaRunRelease: "0.2.12"
+  novaRunRelease: "0.2.13"
 ---
 
 # Nova Run Init
@@ -40,8 +40,8 @@ service:
 
 For multiple applications, put the same `start`, `build`, `artifacts`, and `service` fields below `apps.<selector>`. The selector already becomes the remote app name; add `app` only when the remote name must differ. `start` must remain in the foreground and must not daemonize. `service.command` is the production entrypoint and need not equal `start`. Do not add database, cache, domain, proxy, TLS, load-balancer, discovery, or cloud-resource configuration to Nova's model.
 
-Create or update `nova.yaml` narrowly after the required facts are known. Check the resulting YAML and paths against the repository evidence. `nova target list` may verify the project and an existing credential binding. Do not use `nova status`, `nova deploy`, lifecycle mutations, or a build as an initialization check.
+Create or update `nova.yaml` narrowly after the required facts are known. Check the resulting YAML and paths against the repository evidence. `nova target list` may verify the machine-wide target already shared by every project. Do not create a project-specific Endpoint or credential file, and do not use `nova status`, `nova deploy`, lifecycle mutations, or a build as an initialization check.
 
-Only after `nova.yaml` is valid, optionally bind this project to an already available Nova Agent by running `nova init`. Treat that as a separate local credential write: do it only when the person explicitly asked for binding and the Endpoint and project token are already available through a secure input path. Never place the token in a command line, file in the repository, logs, or the final report; if secure input is unavailable, hand the interactive `nova init` step to the person. Verify a completed binding with `nova target list` without revealing the token.
+Only when `nova target list` proves that this machine has no global target, optionally configure the already available Nova Agent by running `nova init`. Treat that as one machine-level credential write, normally to `~/.nova/client.env`: do it only when the person explicitly asked for target configuration and the Endpoint and machine token are already available through a secure input path. Never place the token in a command line, repository file, logs, or the final report; if secure input is unavailable, hand the interactive `nova init` step to the person. Verify the global target with `nova target list` without revealing the token. A target already used by another project must be reused rather than duplicated.
 
 Stop after project configuration and any explicitly requested local binding. Initialization does not authorize deployment, process changes, Agent installation, authorization rotation, Aliyun changes, or any other infrastructure mutation.

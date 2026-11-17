@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.13] - 2026-11-17
+
+### Changed
+- 恢复机器级 Nova Agent 目标：客户端默认复用 `~/.nova/client.env` 中的 Endpoint 与访问令牌，新项目不再要求重复绑定。
+- 远端操作恢复使用 `/v1/apps/...` 与 `/etc/nova/token`；`nova.yaml` 的项目身份不再参与连接凭据选择。
+
 ## [0.2.12] - 2026-11-17
 
 ### Changed

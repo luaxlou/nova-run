@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/luaxlou/glow-ops/internal/authz"
-	"github.com/luaxlou/glow-ops/internal/deploy"
 	"gopkg.in/yaml.v3"
 )
 
@@ -212,26 +210,6 @@ type Target struct {
 	Build     BuildConfig
 	Artifacts []string
 	Service   ServiceConfig
-}
-
-func ValidateRemoteProject(cfg Config) error {
-	project := strings.TrimSpace(cfg.Project)
-	if project == "" {
-		return fmt.Errorf("%s project is required for remote operations", ConfigFile)
-	}
-	if err := authz.ValidateProjectName(project); err != nil {
-		return fmt.Errorf("%s project: %w", ConfigFile, err)
-	}
-	targets, err := ResolveAll(cfg)
-	if err != nil {
-		return err
-	}
-	for _, target := range targets {
-		if err := deploy.ValidateAppName(target.App); err != nil || strings.Contains(target.App, "--") {
-			return fmt.Errorf("%s remote app %q is invalid or contains reserved delimiter --", ConfigFile, target.App)
-		}
-	}
-	return nil
 }
 
 type LifecycleTarget struct {

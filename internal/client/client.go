@@ -20,7 +20,6 @@ import (
 type Client struct {
 	Endpoint string
 	Token    string
-	Project  string
 }
 
 type DeployResult struct {
@@ -65,14 +64,10 @@ func (c *Client) authHeader() string {
 }
 
 func (c *Client) appPath(name string) (string, error) {
-	project := strings.TrimSpace(c.Project)
-	if project == "" {
-		return "", fmt.Errorf("project name required")
-	}
 	if strings.TrimSpace(name) == "" {
 		return "", fmt.Errorf("app name required")
 	}
-	return "/v2/projects/" + url.PathEscape(project) + "/apps/" + url.PathEscape(name), nil
+	return "/v1/apps/" + url.PathEscape(name), nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, body io.Reader, contentType string) ([]byte, error) {

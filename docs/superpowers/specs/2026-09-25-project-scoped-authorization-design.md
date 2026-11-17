@@ -1,5 +1,7 @@
 # Nova Run Project-Scoped Authorization Design
 
+> Superseded: this design was implemented in Nova 0.2.7 and later reversed because the Agent Endpoint and access token are machine-level Nova target configuration, not project configuration. The current contract is defined by `docs/nova-run-spec.md`: all projects reuse `~/.nova/client.env` and the Agent's `/etc/nova/token` through `/v1/apps/...`.
+
 **Date:** 2026-09-25
 
 ## Goal

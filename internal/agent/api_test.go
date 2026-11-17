@@ -12,82 +12,29 @@ import (
 	"testing"
 
 	"github.com/luaxlou/glow-ops/internal/artifact"
-	"github.com/luaxlou/glow-ops/internal/authz"
 	"github.com/luaxlou/glow-ops/internal/deploy"
 )
 
-func TestProjectTokenCanOnlyListItsOwnApps(t *testing.T) {
+func TestGlobalTokenServesLegacyApplicationAPI(t *testing.T) {
 	root := t.TempDir()
-	for _, name := range []string{"billing--api", "orders--api"} {
-		if err := os.Mkdir(filepath.Join(root, name), 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	store := &authz.Store{Dir: t.TempDir()}
-	billingToken, err := store.Set("billing")
-	if err != nil {
+	if err := os.Mkdir(filepath.Join(root, "api"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	server := &Server{AppRoot: root, AuthStore: store}
+	server := NewServer(root, "machine-token")
 
-	request := httptest.NewRequest(http.MethodGet, "/v2/projects/billing/apps", nil)
-	request.Header.Set("Authorization", "Bearer "+billingToken)
+	request := httptest.NewRequest(http.MethodGet, "/v1/apps", nil)
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"api"`)) || bytes.Contains(recorder.Body.Bytes(), []byte("orders")) {
-		t.Fatalf("billing list status=%d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("missing token status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/v2/projects/orders/apps", nil)
-	request.Header.Set("Authorization", "Bearer "+billingToken)
+	request = httptest.NewRequest(http.MethodGet, "/v1/apps", nil)
+	request.Header.Set("Authorization", "Bearer machine-token")
 	recorder = httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-project status=%d body=%s", recorder.Code, recorder.Body.String())
-	}
-}
-
-func TestProjectScopedDeploySeparatesIdenticalAppNames(t *testing.T) {
-	root := t.TempDir()
-	store := &authz.Store{Dir: t.TempDir()}
-	billingToken, _ := store.Set("billing")
-	ordersToken, _ := store.Set("orders")
-	server := &Server{AppRoot: root, AuthStore: store}
-
-	deploy := func(project, token, contents string) {
-		t.Helper()
-		archive := deployArchive(t, root, false, contents)
-		request := deployRequest(t, archive, "v1")
-		request.URL.Path = "/v2/projects/" + project + "/apps/api"
-		request.Header.Set("Authorization", "Bearer "+token)
-		recorder := httptest.NewRecorder()
-		server.Handler().ServeHTTP(recorder, request)
-		if recorder.Code != http.StatusOK {
-			t.Fatalf("deploy %s status=%d body=%s", project, recorder.Code, recorder.Body.String())
-		}
-	}
-	deploy("billing", billingToken, "billing-content")
-	deploy("orders", ordersToken, "orders-content")
-
-	for runtimeName, want := range map[string]string{
-		"billing--api": "billing-content",
-		"orders--api":  "orders-content",
-	} {
-		got, err := os.ReadFile(filepath.Join(root, runtimeName, "index.txt"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(got) != want {
-			t.Fatalf("%s contents=%q want=%q", runtimeName, got, want)
-		}
-	}
-
-	request := httptest.NewRequest(http.MethodPut, "/v2/projects/orders/apps/other", nil)
-	request.Header.Set("Authorization", "Bearer "+billingToken)
-	recorder := httptest.NewRecorder()
-	server.Handler().ServeHTTP(recorder, request)
-	if recorder.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-project deploy status=%d body=%s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK || !bytes.Contains(recorder.Body.Bytes(), []byte(`"api"`)) {
+		t.Fatalf("global list status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

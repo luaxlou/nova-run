@@ -103,7 +103,7 @@ nova status [app|all] [-r|--remote]
 
 `-r|--remote` 可放在选择器前后。远端 start/stop/restart/status 保留现有 Agent API 行为，run 映射为 restart。远端 status 使用与本地相同的表格并增加 `VERSION` 列；Agent 未提供端口时 `PORT` 显示 `-`。没有远端参数时，这五个生命周期命令不得读取 Endpoint、Token 或触发交互式初始化。
 
-远端操作要求顶层 `project` 项目名称。每个项目在 Agent 上只有一个当前凭证；服务器执行 `sudo nova auth set <project>` 会创建或覆盖该项目授权，旧 token 立即失效。客户端 `nova init` 将 Endpoint 和 token 保存在系统用户配置目录的 `nova/projects/<project>.yaml`，不同项目不会互相回退或复用凭证。
+Agent Endpoint 和访问令牌是本机 Nova CLI 的全局目标配置，默认保存在 `~/.nova/client.env`。不同项目复用同一个目标；`nova.yaml` 不保存 Endpoint 或令牌，顶层 `project` 也不参与凭据选择。服务器使用 `/etc/nova/token` 验证远端请求。环境中的 `NOVA_ENDPOINT` 与 `NOVA_TOKEN` 可以显式覆盖文件值，但不会改变项目配置。
 
 ## 制品与远端运行
 
@@ -128,13 +128,13 @@ runtime:
 ## API/CLI 对应关系
 
 - 本地 supervisor（无 API） -> `nova start|stop|restart|run|status [app|all]`
-- `PUT /v2/projects/{project}/apps/{name}` -> `nova deploy [app|all]`
-- `POST /v2/projects/{project}/apps/{name}/start` -> `nova start [app|all] --remote`
-- `POST /v2/projects/{project}/apps/{name}/stop` -> `nova stop [app|all] --remote`
-- `POST /v2/projects/{project}/apps/{name}/restart` -> `nova restart|run [app|all] --remote`
-- `GET /v2/projects/{project}/apps/{name}/status` -> `nova status [app|all] --remote`
-- `GET /v2/projects/{project}/apps/{name}/logs` -> `nova logs [app|all]`
-- `GET /v2/projects/{project}/apps` 只返回当前项目的远端应用。
+- `PUT /v1/apps/{name}` -> `nova deploy [app|all]`
+- `POST /v1/apps/{name}/start` -> `nova start [app|all] --remote`
+- `POST /v1/apps/{name}/stop` -> `nova stop [app|all] --remote`
+- `POST /v1/apps/{name}/restart` -> `nova restart|run [app|all] --remote`
+- `GET /v1/apps/{name}/status` -> `nova status [app|all] --remote`
+- `GET /v1/apps/{name}/logs` -> `nova logs [app|all]`
+- `GET /v1/apps` 返回该 Agent 上的应用。
 
 CLI 的 `[app]` 是当前项目 `nova.yaml` 中 `apps` 下的选择器，不是临时远端应用名。本地状态身份也始终使用选择器，不使用可选的远端 `app` 别名。
 
@@ -142,7 +142,7 @@ CLI 的 `[app]` 是当前项目 `nova.yaml` 中 `apps` 下的选择器，不是�
 
 Nova Run 同一产品版本还可以分发 Agent Plugin。Codex 与 Claude Code 的清单都指向仓库根目录同一份 `skills/`；Plugin 不增加第二套项目模型，也不改变本规范中的 CLI、Agent 或 API 语义。
 
-`$nova:init` 根据现有项目事实建立或维护 `nova.yaml`，并且只在用户明确要求且已有安全凭据输入时调用 `nova init` 写入本机项目绑定。它不执行构建或部署，不改变本地或远端进程，也不安装 Agent 或配置阿里云资源。
+`$nova:init` 根据现有项目事实建立或维护 `nova.yaml`，并且只在机器尚无全局目标、用户明确要求且已有安全凭据输入时调用 `nova init`。它不为各项目重复写 Endpoint，不执行构建或部署，不改变本地或远端进程，也不安装 Agent 或配置阿里云资源。
 
 `$nova:doctor` 默认只读地检查 CLI 版本、项目配置、仓库事实和本地绑定。任何修复都必须先说明精确的本地改动并逐项获得授权；Doctor 不得隐式调用部署、生命周期变更、授权轮换、云控制面或其他外部写操作。远端只读检查也只有在用户要求相应诊断且本地绑定已经存在时才执行。
 

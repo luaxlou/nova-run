@@ -2,7 +2,7 @@
 name: doctor
 description: Diagnose a Nova Run project's local configuration, CLI compatibility, credential binding, and read-only status, then apply narrowly scoped local repairs only with explicit authorization. Do not use it to deploy, change process state, mutate cloud resources, or perform implicit external writes.
 metadata:
-  novaRunRelease: "0.2.11"
+  novaRunRelease: "0.2.12"
 ---
 
 # Nova Run Doctor
@@ -17,11 +17,13 @@ Keep Nova Run separate from application frameworks and Runtime products while di
 
 Determine each configured command's role from authoritative repository instructions and the installed command's help, without interpreting another product's private model. A high-level public build entry that already owns compilation, adapter selection, packaging, and Artifact formation must not be followed by its internal package-manager, compiler, copy, or wrapper command. Diagnose that duplication as leaked implementation detail even if it currently succeeds. Treat the declared Artifact path as opaque. Verify that local `start` uses the documented development entry and `service.command` uses the documented production entry from the delivered Artifact root; a working production command in the local field is still an environment error, and a development watcher is not a production service.
 
+Nova discovers the ports actually opened by each supervised local process. Diagnose fixed ports, addresses, or another product's host-control environment variables in `start` when they exist only to help Nova observe the process; they are unnecessary coupling. Prefer the other product's complete public development command when it owns binding selection. Inspect a repository wrapper far enough to distinguish a redundant launcher from one that also creates application-owned development state, credentials, identity, or other required facts. The former is leaked implementation detail; the latter proves that the repository does not yet have one complete public development entry and is not safe to replace automatically.
+
 Check the facts in their natural dependency order:
 
 - the project and app identities are valid and unambiguous;
 - every selector resolves to a repeatable build command and exactly one plausible artifact path;
-- local `start` commands are long-running foreground commands and contain no obsolete `run` or `stop` fields;
+- local `start` commands are long-running foreground public development entries, contain no obsolete `run` or `stop` fields, and do not pin product-private host controls merely for Nova supervision;
 - each configured `service.command` is valid relative to the declared Artifact root and contains no repository secret; remember that a directory service artifact is preserved below Nova's outer deployment wrapper and used as the command working directory, while a single-file service artifact is staged at the wrapper root under its basename;
 - any immutable or closed directory Artifact is selected directly, so Nova's generic outer deployment wrapper can preserve its contents and use it as the service working directory;
 - referenced paths and scripts agree with the repository, distinguishing an expected not-yet-built output from a broken path; and

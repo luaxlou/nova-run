@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.12] - 2026-11-17
+
+### Changed
+- Init 与 Doctor 明确利用 Nova supervisor 的端口发现能力，不再为本地监督写入固定端口、地址或其他产品的私有宿主控制。
+- Doctor 区分单纯转调公开开发命令的冗余包装器与同时建立应用状态、凭据或身份的必要包装器，避免把后者误删并暴露缺失的公开开发入口。
+
 ## [0.2.11] - 2026-11-16
 
 ### Changed

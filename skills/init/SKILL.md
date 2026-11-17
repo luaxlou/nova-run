@@ -2,7 +2,7 @@
 name: init
 description: Establish or maintain a repository's Nova Run project and deployment configuration, then optionally bind existing local Agent credentials. Use when onboarding a project or changing its Nova-managed build, artifact, or lifecycle declaration; do not use to deploy, provision infrastructure, or configure cloud services.
 metadata:
-  novaRunRelease: "0.2.11"
+  novaRunRelease: "0.2.12"
 ---
 
 # Nova Run Init
@@ -21,7 +21,9 @@ Treat Nova Run and every application framework, compiler, Artifact format, and R
 
 Identify command ownership from the repository's authoritative instructions and the installed command's help. Prefer the highest-level public entry that completely owns the requested phase. When a public build command already selects its compiler, adapter, or packager and produces the declared Artifact, configure that command alone; do not append its internal package-manager, compiler, copy, or wrapper steps. Treat its output directory as opaque. Separate environments by intent: local `start` must use the product's documented development entry, while `service.command` must use its documented production entry from the delivered Artifact root. Do not substitute a production start for local development merely because it happens to run, and do not use a development watcher as the production process.
 
-Keep secrets, tokens, machine-specific addresses, and cloud credentials out of `nova.yaml`. Use a top-level `project` and either one top-level application or an `apps` mapping. For a single-file service artifact, Nova stages that file's basename at the package root. For a directory service artifact, Nova preserves the configured directory as an opaque `artifact/` subtree inside its own deployment wrapper and executes `service.command` with that subtree as the working directory; the project must not add a second packaging command merely to accommodate Nova metadata. Write `service.command` relative to the configured Artifact root, not the source-repository path. For example:
+Nova's local supervisor discovers the ports actually opened by the foreground process. Do not add a fixed port, address, or another product's host-control environment variables merely so Nova can report or supervise that process. When the public development entry already chooses or reports its own binding, configure that entry alone. If a repository wrapper only injects another product's internal host controls before delegating to its public development command, treat the wrapper as leaked implementation detail. If the wrapper also establishes application-owned state, credentials, identity, or other required development facts, do not silently remove it: report that the repository lacks one complete public development entry and ask the project to establish that boundary first.
+
+Keep secrets, tokens, machine-specific addresses, product-private host controls, and cloud credentials out of `nova.yaml`. Use a top-level `project` and either one top-level application or an `apps` mapping. For a single-file service artifact, Nova stages that file's basename at the package root. For a directory service artifact, Nova preserves the configured directory as an opaque `artifact/` subtree inside its own deployment wrapper and executes `service.command` with that subtree as the working directory; the project must not add a second packaging command merely to accommodate Nova metadata. Write `service.command` relative to the configured Artifact root, not the source-repository path. For example:
 
 ```yaml
 project: example

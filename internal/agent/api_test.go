@@ -38,7 +38,7 @@ func TestGlobalTokenServesLegacyApplicationAPI(t *testing.T) {
 	}
 }
 
-func TestHandleDeployRestartsServiceAfterArtifactAndMetadataAreSaved(t *testing.T) {
+func TestHandleDeployCommitsMetadataAfterServiceActivation(t *testing.T) {
 	root := t.TempDir()
 	server := &Server{AppRoot: root}
 	archive := deployArchive(t, root, true, "new-service")
@@ -52,9 +52,8 @@ func TestHandleDeployRestartsServiceAfterArtifactAndMetadataAreSaved(t *testing.
 		if !artifact.HasRunBinary(filepath.Join(root, name)) {
 			t.Fatal("service run binary was not installed before restart")
 		}
-		version, ok, err := deploy.CurrentVersion(root, name)
-		if err != nil || !ok || version != "v2" {
-			t.Fatalf("version at restart = %q, %t, %v; want v2, true, nil", version, ok, err)
+		if version, ok, err := deploy.CurrentVersion(root, name); err != nil || ok {
+			t.Fatalf("version must not be committed before activation: %q, %t, %v", version, ok, err)
 		}
 		return nil
 	}
@@ -67,6 +66,10 @@ func TestHandleDeployRestartsServiceAfterArtifactAndMetadataAreSaved(t *testing.
 	}
 	if !restarted {
 		t.Fatal("service artifact was not restarted")
+	}
+	version, ok, err := deploy.CurrentVersion(root, "api")
+	if err != nil || !ok || version != "v2" {
+		t.Fatalf("committed version = %q, %t, %v; want v2, true, nil", version, ok, err)
 	}
 }
 
@@ -129,14 +132,14 @@ func TestHandleDeployReturnsServerErrorWhenServiceRestartFailsAfterDeploy(t *tes
 	if recorder.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusInternalServerError, recorder.Body.String())
 	}
-	// The replacement and version are durable despite the 500. A same-version
-	// deploy remains idempotently skipped; recovery uses the explicit restart action.
+	// The replacement is retained for diagnosis, but the version is not committed.
+	// Once the host problem is repaired, the same version can be deployed again.
 	if !artifact.HasRunBinary(filepath.Join(root, "api")) {
 		t.Fatal("deployed service artifact was not retained after restart failure")
 	}
 	version, ok, err := deploy.CurrentVersion(root, "api")
-	if err != nil || !ok || version != "v2" {
-		t.Fatalf("deployed version = %q, %t, %v; want v2, true, nil", version, ok, err)
+	if err != nil || ok {
+		t.Fatalf("failed activation must not commit version: %q, %t, %v", version, ok, err)
 	}
 }
 

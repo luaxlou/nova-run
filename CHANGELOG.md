@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.14] - 2026-11-17
+
+### Changed
+- Service 部署只有在生产进程连续稳定运行后才提交版本；立即退出或进入 systemd 自动重试会停止重试并返回失败，修复运行环境后可重新部署同一版本。
+
 ## [0.2.13] - 2026-11-17
 
 ### Changed

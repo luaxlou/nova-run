@@ -221,7 +221,7 @@ Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立�
 
 例如，EV protocol 3 工程可以把 `ev check` 和 `ev build [app]` 直接写入 `build.commands`，也可以明确选择 `ev dev <app>` 或 `ev start <app> [--prod]` 作为被 Nova 调用的生命周期命令。这些命令的清单解析、Adapter 选择、Artifact 构建、开发和启动语义都属于 EV；Nova 只观察进程与退出状态并封装配置的路径。这是命令级共生，不是 Nova 对 EV 的原生适配，也不表示 Nova 取代 EV 的开发和启动入口。
 
-`nova deploy` 只接受干净的 Git 工作区。每次成功部署都会把当前 Git HEAD 短 SHA 写入服务端部署元数据；`nova status --remote` 会展示该 `version`。当本地版本与服务端已部署版本一致时，Nova 返回 `already latest`，跳过构建和上传。
+`nova deploy` 只接受干净的 Git 工作区。静态 Artifact 在替换完成后提交当前 Git HEAD 短 SHA；Service Artifact 只有在生产进程连续稳定运行后才提交该版本，`nova status --remote` 会展示已经提交的 `version`。如果进程立即退出或进入 systemd 自动重试，Nova 会停止重试并让部署失败；修复服务器环境后可以重新部署同一版本。当本地版本与服务端已提交版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
 ## 制品清单
 

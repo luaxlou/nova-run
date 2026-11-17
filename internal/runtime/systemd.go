@@ -6,6 +6,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	serviceActivationTimeout = 15 * time.Second
+	serviceStableDuration    = 3 * time.Second
+	serviceStatusInterval    = 100 * time.Millisecond
 )
 
 type Status struct {
@@ -80,6 +87,74 @@ func (c *Controller) Stop(name string) error {
 
 func (c *Controller) Restart(name string) error {
 	return c.systemctl("restart", c.serviceName(name))
+}
+
+// RestartAndConfirm only reports success after systemd has kept the process in
+// active/running state for a short stability window. systemctl restart returning
+// successfully only means that systemd accepted the request; the process may
+// still fail immediately and enter an automatic restart loop.
+func (c *Controller) RestartAndConfirm(name string) error {
+	if err := c.Restart(name); err != nil {
+		return err
+	}
+	if err := waitForStableService(c.Status, name, serviceActivationTimeout, serviceStableDuration, serviceStatusInterval); err != nil {
+		if stopErr := c.Stop(name); stopErr != nil {
+			return fmt.Errorf("%w; additionally failed to stop the unstable service: %v", err, stopErr)
+		}
+		return fmt.Errorf("%w; automatic restart was stopped", err)
+	}
+	return nil
+}
+
+func waitForStableService(
+	status func(string) (Status, error),
+	name string,
+	timeout time.Duration,
+	stableDuration time.Duration,
+	interval time.Duration,
+) error {
+	deadline := time.Now().Add(timeout)
+	var stableSince time.Time
+	var last Status
+	for {
+		current, err := status(name)
+		if err != nil {
+			return fmt.Errorf("inspect service activation: %w", err)
+		}
+		last = current
+		now := time.Now()
+		if current.State == "active" && current.SubState == "running" {
+			if stableSince.IsZero() {
+				stableSince = now
+			}
+			if now.Sub(stableSince) >= stableDuration {
+				return nil
+			}
+		} else {
+			stableSince = time.Time{}
+		}
+
+		if current.State == "failed" ||
+			(current.State == "activating" && current.SubState == "auto-restart") ||
+			(current.State == "inactive" && current.SubState == "dead" && current.ExitCode != "" && current.ExitCode != "0") {
+			return fmt.Errorf(
+				"service activation failed (state=%s, substate=%s, exit=%s)",
+				current.State,
+				current.SubState,
+				current.ExitCode,
+			)
+		}
+		if !now.Before(deadline) {
+			return fmt.Errorf(
+				"service did not remain active/running within %s (last state=%s, substate=%s, exit=%s)",
+				timeout,
+				last.State,
+				last.SubState,
+				last.ExitCode,
+			)
+		}
+		time.Sleep(interval)
+	}
 }
 
 func (c *Controller) Status(name string) (Status, error) {

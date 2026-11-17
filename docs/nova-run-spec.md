@@ -109,6 +109,8 @@ Agent Endpoint 和访问令牌是本机 Nova CLI 的全局目标配置，默认�
 
 `service.command` 仍是远端生产进程入口。发布目录型 Service Artifact 时，Nova 在通用外层包生成 `run` 和 `nova.app.yaml`，把项目声明的 Artifact 原样复制到 `artifact/`，并从该目录执行 `service.command`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
 
+Service Artifact 替换后，Agent 必须确认 systemd 进程连续稳定处于 `active/running`，再提交部署版本。`systemctl restart` 只表示请求被接受，不构成部署成功证据；进程立即退出、进入 `failed` 或 `auto-restart` 时，Agent 停止该服务的自动重试、返回部署失败，并保留未提交的 Artifact 供诊断和同版本重试。这个检查只观察通用进程状态，不解析或适配 `service.command` 所属的外部产品。
+
 这层通用包装使要求内容闭包保持不变的第三方制品可以直接成为 `artifacts` 指向的目录，不需要项目增加另一条打包命令。Nova 不解析内部清单，也不改变内部文件；它只隔离自己的部署元数据并在声明的 Artifact 根执行项目给出的命令。这是两个独立系统通过命令和目录边界协作，不表示 Nova 理解或适配该 framework。
 
 Artifact 清单示例：

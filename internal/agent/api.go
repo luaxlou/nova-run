@@ -38,7 +38,7 @@ func (s *Server) restart(name string) error {
 		return s.restartService(name)
 	}
 	ctrl := runtime.Controller{}
-	return ctrl.Restart(name)
+	return ctrl.RestartAndConfirm(name)
 }
 
 func (s *Server) Handler() http.Handler {
@@ -321,15 +321,15 @@ func (s *Server) handleDeployAs(w http.ResponseWriter, r *http.Request, name, di
 		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if err := deploy.SaveMetadata(appDir, deploy.Metadata{Version: version}); err != nil {
-		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	if artifact.HasRunBinary(appDir) {
 		if err := s.restart(name); err != nil {
 			api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+	}
+	if err := deploy.SaveMetadata(appDir, deploy.Metadata{Version: version}); err != nil {
+		api.RenderJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	api.RenderJSON(w, api.Response{
 		Success: true,

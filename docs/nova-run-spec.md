@@ -21,9 +21,9 @@ Nova 不管理数据库、缓存、Ingress、反向代理、域名、TLS、负�
 
 ## 项目配置
 
-Nova Run 的项目模型与应用框架、编译器、制品格式和 Runtime 相互独立。`build.commands` 是项目拥有的普通命令；Nova 按顺序执行它们，但不解析外部产品清单、不加载外部 Toolchain Adapter，也不根据源码或文件扩展名猜测构建方式。`artifacts` 指向 Nova 要交付的一个外层文件或目录，目录内容对 Nova 而言是不透明的部署输入。
+Nova Run 的项目模型与应用框架、编译器、制品格式和 Runtime 相互独立。`build.commands` 是项目拥有的普通命令；Nova 按顺序执行它们，但不解析外部产品清单、不加载外部 Runtime Provider，也不根据源码或文件扩展名猜测构建方式。`artifacts` 指向 Nova 要交付的一个外层文件或目录，目录内容对 Nova 而言是不透明的部署输入。
 
-当项目明确采用 EV protocol 3 时，`ev check`、`ev build [app]`、`ev dev <app>` 与 `ev start <app> [--prod]` 都是 EV 拥有的公开命令。检查和构建命令可以直接成为 `build.commands`，开发或启动命令也可以在项目明确选择时被 Nova 生命周期调用。EV 负责读取 Application Description、调用 Adapter、形成 `dist/` 并定义开发与启动行为；Nova 不重复这些语义，只执行命令、观察进程并封装声明的路径。
+当项目明确采用 EV protocol 3 时，构建命令必须显式传入 Runtime 短名称，例如 `ev build api --runtime service-application` 或 `ev build web --runtime browser-application`。EV 从项目已经选择的精确 Capability 图中唯一解析 Runtime，并在 Artifact 中固定 Capability、精确版本和 Runtime 名称；Nova 不解析这些身份，只执行构建命令并封装声明的输出路径。`ev dev` 与源码 `ev start` 属于开发阶段，生产阶段不调用 EV。
 
 单应用：
 
@@ -70,7 +70,7 @@ apps:
 
 `service.platform` 可选且当前只接受 `linux-x64`。它描述 Nova Agent 启动 standalone Service 前必须满足的目标主机平台，不赋予 Nova 解析编译器或外部 Artifact manifest 的责任。没有 `service.command` 的独立 selector 保持为静态 Artifact；项目可据此分别发布 Web 与 API。
 
-Nova Run 0.2.15 首次提供该通用平台预检。选择 EV `typescript-composition@2.0.0` standalone 输出的项目需要 EV Product Release 0.1.169 与 Nova Run 0.2.15；这是项目固定的命令和制品兼容组合，不表示 Nova 加载或解释 EV。
+Nova Run 0.2.15 首次提供该通用平台预检。采用 Runtime 短名称 Build/Start 合同的候选兼容组合为 EV Product Release 0.1.170、Runtime Patterns 0.8.0 与 Nova Run 0.2.16。Runtime Patterns 从 `main` 发布；这只是项目固定的命令和制品兼容组合，不表示 Nova 加载或解释 EV 或 Runtime Capability。
 
 本地生命周期与部署独立校验：纯本地配置只需要 `start`；部署仍要求应用名和单一制品路径，并按现有规则校验构建与 service 配置。stop 和 status 只需要已配置的本地应用身份，因此即使 start 被临时移除，仍可查询或停止既有 supervisor。
 
@@ -112,7 +112,7 @@ Agent Endpoint 和访问令牌是本机 Nova CLI 的全局目标配置，默认�
 
 ## 制品与远端运行
 
-`service.command` 仍是远端生产进程入口。发布目录型 Service Artifact 时，Nova 在通用外层包生成 `run` 和 `nova.app.yaml`，把项目声明的 Artifact 原样复制到 `artifact/`，并从该目录执行 `service.command`；这里的制品文件名 `run` 与已移除的本地配置字段无关。
+`service.command` 仍是远端生产进程入口。发布目录型 Service Artifact 时，Nova 在通用外层包生成 `run` 和 `nova.app.yaml`，把项目声明的 Artifact 原样复制到 `artifact/`，并从该目录直接执行 standalone `service.command`；这里的制品文件名 `run` 与已移除的本地配置字段无关。该命令不得调用 `ev start`、Bun、包安装器或构建器。
 
 Service Artifact 替换后，Agent 必须确认 systemd 进程连续稳定处于 `active/running`，再提交部署版本。`systemctl restart` 只表示请求被接受，不构成部署成功证据；进程立即退出、进入 `failed` 或 `auto-restart` 时，Agent 停止该服务的自动重试、返回部署失败，并保留未提交的 Artifact 供诊断和同版本重试。这个检查只观察通用进程状态，不解析或适配 `service.command` 所属的外部产品。
 

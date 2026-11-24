@@ -220,9 +220,9 @@ nova logs sbom-platform-backend -f
 
 `service.platform` 是可选的通用目标主机约束，当前支持 `linux-x64`。它适合已经把语言 Runtime 封装进可执行文件的 standalone Service；Nova Agent 会在替换当前版本前核对主机平台。Web 使用另一个没有 `service.command` 的 selector 发布静态 Artifact，API selector 直接执行自己的二进制，两者不需要互相托管。
 
-Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立的系统。Nova 不解析外部产品清单，也不加载其 Toolchain Adapter；项目自己的构建命令负责生成 Nova 要交付的路径。仓库里出现某种 framework manifest，并不表示 Nova 需要对该 framework 做原生适配。
+Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立的系统。Nova 不解析外部产品清单，也不加载其 Runtime Provider；项目自己的构建命令负责生成 Nova 要交付的路径。仓库里出现某种 framework manifest，并不表示 Nova 需要对该 framework 做原生适配。
 
-例如，EV protocol 3 工程可以把 `ev check` 和 `ev build [app]` 直接写入 `build.commands`，也可以明确选择 `ev dev <app>` 或 `ev start <app> [--prod]` 作为被 Nova 调用的生命周期命令。这些命令的清单解析、Adapter 选择、Artifact 构建、开发和启动语义都属于 EV；Nova 只观察进程与退出状态并封装配置的路径。这是命令级共生，不是 Nova 对 EV 的原生适配，也不表示 Nova 取代 EV 的开发和启动入口。
+例如，EV protocol 3 工程可以把 `ev build api --runtime service-application` 与 `ev build web --runtime browser-application` 分别写入两个 selector 的 `build.commands`。Runtime 短名称由 EV 从项目已经选择的精确 Capability 图中解析；生成的 Artifact 固定解析后的 Capability、版本和 Runtime 名称。Nova 不解析这些身份，只封装项目声明的输出路径。生产阶段不再调用 `ev start`：API selector 直接执行 standalone 文件，Web selector 只发布静态目录。
 
 `nova deploy` 只接受干净的 Git 工作区。静态 Artifact 在替换完成后提交当前 Git HEAD 短 SHA；Service Artifact 只有在生产进程连续稳定运行后才提交该版本，`nova status --remote` 会展示已经提交的 `version`。如果进程立即退出或进入 systemd 自动重试，Nova 会停止重试并让部署失败；修复服务器环境后可以重新部署同一版本。当本地版本与服务端已提交版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
@@ -239,7 +239,7 @@ deployment/
 └── nova.app.yaml # Nova 外层清单
 ```
 
-`service.command` 的工作目录是 `artifact/`，因此可以直接写该产品公开的生产入口，例如 `ev start api-server --prod`；具体命令、环境和内部目录仍由项目与该 Runtime 的公开合同决定。
+`service.command` 的工作目录是 `artifact/`，应直接指向制品内的生产入口，例如 `./api-server`。生产命令不得包含 EV、Bun、包安装或构建步骤；这些依赖只存在于构建环境。
 
 示例：
 

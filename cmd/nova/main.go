@@ -599,7 +599,7 @@ func prepareServiceArtifact(artifactDir string, target project.Target, workingDi
 	manifest := artifact.Manifest{
 		App:      target.App,
 		Artifact: artifact.ArtifactManifest{Files: files},
-		Process:  artifact.ProcessManifest{Command: target.Service.Command},
+		Process:  artifact.ProcessManifest{Command: target.Service.Command, Platform: target.Service.Platform},
 		Runtime:  artifact.RuntimeManifest{HealthCommand: target.Service.HealthCommand},
 	}
 	if err := artifact.SaveManifest(artifactDir, manifest); err != nil {

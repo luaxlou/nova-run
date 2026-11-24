@@ -36,6 +36,7 @@ type BuildConfig struct {
 
 type ServiceConfig struct {
 	Command       string            `json:"command,omitempty" yaml:"command,omitempty"`
+	Platform      string            `json:"platform,omitempty" yaml:"platform,omitempty"`
 	Env           map[string]string `json:"env,omitempty" yaml:"env,omitempty"`
 	HealthCommand string            `json:"healthCommand,omitempty" yaml:"healthCommand,omitempty"`
 }
@@ -400,6 +401,9 @@ func validateService(label string, service ServiceConfig) error {
 	if strings.Contains(command, "\x00") || strings.Contains(command, "\n") || strings.Contains(command, "\r") {
 		return fmt.Errorf("%s service.command contains invalid characters", label)
 	}
+	if platform := strings.TrimSpace(service.Platform); platform != "" && platform != "linux-x64" {
+		return fmt.Errorf("%s service.platform must be linux-x64 when set", label)
+	}
 	for key, value := range service.Env {
 		if !isEnvName(key) {
 			return fmt.Errorf("%s service.env contains invalid name: %s", label, key)
@@ -417,7 +421,7 @@ func validateService(label string, service ServiceConfig) error {
 }
 
 func hasService(service ServiceConfig) bool {
-	return strings.TrimSpace(service.Command) != "" || len(service.Env) > 0 || strings.TrimSpace(service.HealthCommand) != ""
+	return strings.TrimSpace(service.Command) != "" || strings.TrimSpace(service.Platform) != "" || len(service.Env) > 0 || strings.TrimSpace(service.HealthCommand) != ""
 }
 
 func isEnvName(value string) bool {
@@ -461,7 +465,7 @@ func mergeArtifacts(base, override []string) []string {
 }
 
 func mergeService(base, override ServiceConfig) ServiceConfig {
-	if strings.TrimSpace(override.Command) != "" || len(override.Env) > 0 || strings.TrimSpace(override.HealthCommand) != "" {
+	if strings.TrimSpace(override.Command) != "" || strings.TrimSpace(override.Platform) != "" || len(override.Env) > 0 || strings.TrimSpace(override.HealthCommand) != "" {
 		return override
 	}
 	return base

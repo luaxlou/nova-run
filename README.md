@@ -192,6 +192,7 @@ apps:
       - backend/dist/backend
     service:
       command: ./api
+      platform: linux-x64
       env:
         CONFIG_PATH: ./config.yaml
   sbom-platform-worker:
@@ -216,6 +217,8 @@ nova logs sbom-platform-backend -f
 ```
 
 上面的 `build.commands` 完全由应用自己决定。Nova 只在部署前按顺序调用这些命令，并发布 `artifacts` 指向的制品路径；这个路径可以是目录，也可以是单个文件。`service` 是可选的；没有 `service.command` 的目标会作为静态制品发布。
+
+`service.platform` 是可选的通用目标主机约束，当前支持 `linux-x64`。它适合已经把语言 Runtime 封装进可执行文件的 standalone Service；Nova Agent 会在替换当前版本前核对主机平台。Web 使用另一个没有 `service.command` 的 selector 发布静态 Artifact，API selector 直接执行自己的二进制，两者不需要互相托管。
 
 Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立的系统。Nova 不解析外部产品清单，也不加载其 Toolchain Adapter；项目自己的构建命令负责生成 Nova 要交付的路径。仓库里出现某种 framework manifest，并不表示 Nova 需要对该 framework 做原生适配。
 

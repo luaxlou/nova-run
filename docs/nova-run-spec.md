@@ -54,6 +54,7 @@ apps:
       - dist/api
     service:
       command: ./api
+      platform: linux-x64
   web:
     start: exec npm run dev
     build:
@@ -66,6 +67,10 @@ apps:
 顶层 `start` 是子应用默认值，子应用字段优先。start 禁止包含 NUL、回车或换行，继承调用 Nova 时的环境，并以 canonical `nova.yaml` 所在目录为工作目录。
 
 `start` 必须是持续运行的前台命令，不能自行 daemonize。建议 shell 脚本最后使用 `exec`，使应用直接接管 shell 进程。旧的本地 `run: <command>` 和 `stop:` 字段均不再支持。
+
+`service.platform` 可选且当前只接受 `linux-x64`。它描述 Nova Agent 启动 standalone Service 前必须满足的目标主机平台，不赋予 Nova 解析编译器或外部 Artifact manifest 的责任。没有 `service.command` 的独立 selector 保持为静态 Artifact；项目可据此分别发布 Web 与 API。
+
+Nova Run 0.2.15 首次提供该通用平台预检。选择 EV `typescript-composition@2.0.0` standalone 输出的项目需要 EV Product Release 0.1.169 与 Nova Run 0.2.15；这是项目固定的命令和制品兼容组合，不表示 Nova 加载或解释 EV。
 
 本地生命周期与部署独立校验：纯本地配置只需要 `start`；部署仍要求应用名和单一制品路径，并按现有规则校验构建与 service 配置。stop 和 status 只需要已配置的本地应用身份，因此即使 start 被临时移除，仍可查询或停止既有 supervisor。
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -23,7 +24,8 @@ type ArtifactManifest struct {
 }
 
 type ProcessManifest struct {
-	Command string `json:"command,omitempty" yaml:"command,omitempty"`
+	Command  string `json:"command,omitempty" yaml:"command,omitempty"`
+	Platform string `json:"platform,omitempty" yaml:"platform,omitempty"`
 }
 
 type RuntimeManifest struct {
@@ -69,6 +71,9 @@ func ValidateManifest(artifactDir string, manifest Manifest) error {
 			return fmt.Errorf("%s process.command contains invalid characters", ManifestFile)
 		}
 	}
+	if platform := strings.TrimSpace(manifest.Process.Platform); platform != "" && platform != "linux-x64" {
+		return fmt.Errorf("%s process.platform is unsupported: %s", ManifestFile, platform)
+	}
 	for _, file := range manifest.Artifact.Files {
 		clean := filepath.Clean(strings.TrimSpace(file))
 		if clean == "" || clean == "." || strings.HasPrefix(clean, "..") || filepath.IsAbs(clean) {
@@ -86,6 +91,22 @@ func ValidateManifest(artifactDir string, manifest Manifest) error {
 	return nil
 }
 
+func ValidateHostPlatform(manifest Manifest) error {
+	platform := strings.TrimSpace(manifest.Process.Platform)
+	if platform == "" {
+		return nil
+	}
+	hostArch := runtime.GOARCH
+	if hostArch == "amd64" {
+		hostArch = "x64"
+	}
+	host := runtime.GOOS + "-" + hostArch
+	if host != platform {
+		return fmt.Errorf("%s requires %s but this host is %s", ManifestFile, platform, host)
+	}
+	return nil
+}
+
 func DeploymentSummary(manifest Manifest) []string {
 	lines := []string{}
 	if manifest.App != "" {
@@ -96,6 +117,9 @@ func DeploymentSummary(manifest Manifest) []string {
 	}
 	if manifest.Process.Command != "" {
 		lines = append(lines, "process command: "+manifest.Process.Command)
+	}
+	if manifest.Process.Platform != "" {
+		lines = append(lines, "process platform: "+manifest.Process.Platform)
 	}
 	if manifest.Runtime.HealthCommand != "" {
 		lines = append(lines, "health command: "+manifest.Runtime.HealthCommand)

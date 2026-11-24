@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.15] - 2026-11-24
+
+### Added
+- Service 可声明通用 `platform: linux-x64`，Nova Agent 在替换当前健康版本前拒绝目标平台不匹配的 standalone 制品。
+- 文档明确同一项目可用独立 selector 分别发布静态 Web Artifact 和 standalone API Service Artifact，Nova 不解析外部产品清单。
+
 ## [0.2.14] - 2026-11-17
 
 ### Changed

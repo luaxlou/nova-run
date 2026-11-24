@@ -2,7 +2,7 @@
 name: init
 description: Establish or maintain a repository's Nova Run project and deployment configuration, then optionally bind existing local Agent credentials. Use when onboarding a project or changing its Nova-managed build, artifact, or lifecycle declaration; do not use to deploy, provision infrastructure, or configure cloud services.
 metadata:
-  novaRunRelease: "0.2.14"
+  novaRunRelease: "0.2.15"
 ---
 
 # Nova Run Init
@@ -15,7 +15,8 @@ Resolve the intended repository root, then inspect its existing `nova.yaml`, man
 - each application or selector and any intentionally different remote app name;
 - a repeatable build command and exactly one deployable artifact path per application;
 - the long-running local foreground `start` command, when local lifecycle management is wanted; and
-- the production `service.command`, relative to the artifact root, when the artifact runs as a service.
+- the production `service.command`, relative to the artifact root, when the artifact runs as a service; and
+- the optional `service.platform`, currently `linux-x64`, when a standalone executable must be rejected on an incompatible Agent host.
 
 Treat Nova Run and every application framework, compiler, Artifact format, and Runtime as independent systems. Nova executes repository-owned public commands, packages the configured path, and runs the declared process; it does not infer another product's project model, load its adapters, or claim a product relationship merely because the repository contains another manifest. A product manifest proves application intent, not a Nova build command. If the repository has no repeatable public command that produces the required deployable path, report the missing project fact and ask for that decision; do not diagnose a compatibility defect or invent an import of private modules.
 

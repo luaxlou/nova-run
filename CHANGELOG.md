@@ -7,11 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.17] - 2026-11-24
+
+### Changed
+- 纠正产品职责说明：Nova 只提供不透明的 Build 命令通道、Artifact 交付和部署生命周期，不拥有或解释任何外部构建系统、Runtime、版本组合或制品内部身份。
+
 ## [0.2.16] - 2026-11-24
 
 ### Changed
-- 迁移说明采用 EV Runtime 短名称构建命令；Nova 只在构建阶段执行 EV，并在生产阶段直接执行 standalone Service Artifact 或发布静态 Browser Artifact。
-- 记录 EV Product Release 0.1.170、Runtime Patterns 0.8.0 与 Nova Run 0.2.16 的候选兼容组合，以及 Artifact 中固定的 Runtime Capability、精确版本和短名称身份。
+- 文档明确同一项目可以通过两个独立 selector 交付 standalone Service Artifact 与静态 Artifact；具体构建命令和制品语义完全属于项目选择的外部构建系统。
 
 ## [0.2.15] - 2026-11-24
 

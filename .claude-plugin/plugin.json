@@ -1,6 +1,6 @@
 {
   "name": "nova",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "Nova Run CLI and Agent skills for initializing and diagnosing Nova-managed deployment projects.",
   "author": {
     "name": "luaxlou"

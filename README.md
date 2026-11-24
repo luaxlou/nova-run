@@ -222,7 +222,7 @@ nova logs sbom-platform-backend -f
 
 Nova Run 与应用框架、编译器、制品格式和 Runtime 是相互独立的系统。Nova 不解析外部产品清单，也不加载其 Runtime Provider；项目自己的构建命令负责生成 Nova 要交付的路径。仓库里出现某种 framework manifest，并不表示 Nova 需要对该 framework 做原生适配。
 
-例如，EV protocol 3 工程可以把 `ev build api --runtime service-application` 与 `ev build web --runtime browser-application` 分别写入两个 selector 的 `build.commands`。Runtime 短名称由 EV 从项目已经选择的精确 Capability 图中解析；生成的 Artifact 固定解析后的 Capability、版本和 Runtime 名称。Nova 不解析这些身份，只封装项目声明的输出路径。生产阶段不再调用 `ev start`：API selector 直接执行 standalone 文件，Web selector 只发布静态目录。
+每个 selector 都可以在 `build.commands` 中声明项目选择的公开构建命令。Nova 只按顺序执行命令并接收 `artifacts` 指向的结果；构建系统选择、编译、Runtime、制品类型及其内部身份全部属于项目，Nova 不解析也不建立兼容关系。
 
 `nova deploy` 只接受干净的 Git 工作区。静态 Artifact 在替换完成后提交当前 Git HEAD 短 SHA；Service Artifact 只有在生产进程连续稳定运行后才提交该版本，`nova status --remote` 会展示已经提交的 `version`。如果进程立即退出或进入 systemd 自动重试，Nova 会停止重试并让部署失败；修复服务器环境后可以重新部署同一版本。当本地版本与服务端已提交版本一致时，Nova 返回 `already latest`，跳过构建和上传。
 
@@ -239,7 +239,7 @@ deployment/
 └── nova.app.yaml # Nova 外层清单
 ```
 
-`service.command` 的工作目录是 `artifact/`，应直接指向制品内的生产入口，例如 `./api-server`。生产命令不得包含 EV、Bun、包安装或构建步骤；这些依赖只存在于构建环境。
+`service.command` 的工作目录是 `artifact/`，应指向项目交付的前台生产入口，例如 `./api-server`。Nova 不解释该入口由什么语言、Runtime 或构建系统产生。
 
 示例：
 

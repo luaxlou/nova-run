@@ -4,13 +4,13 @@
     "name": "luaxlou"
   },
   "description": "Nova Run CLI and Agent skills delivered as one versioned product.",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "plugins": [
     {
       "name": "nova",
       "source": "./",
       "description": "Nova Run CLI and Agent skills for initializing and diagnosing Nova-managed deployment projects.",
-      "version": "0.2.16"
+      "version": "0.2.17"
     }
   ]
 }
